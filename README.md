@@ -78,7 +78,7 @@ Cloudflare uses a sophisticated, multi-layered approach to detection. <br>So the
 ### 1. SeleniumBase UC Mode:
 * **SeleniumBase** - is a framework built on top of Selenium that adds some extra features, including special _"Undetected-Chromedriver"_ or <br> _UC_ mode designed specifically to evade bot detections for one:
 
-* **How does it in code:** - [seleniumbase_scraper.py](/indeed_scraper/modules/seleniumbase_scraper.py) inits the scraper with _uc=True_:
+* **How does it in code:** - [seleniumbase_scraper.py](/modules/seleniumbase_scraper.py) inits the scraper with _uc=True_:
 
 ```python
 from seleniumbase import SB
@@ -133,7 +133,7 @@ try:
 * Modern fast browser automation library from Microsoft - originally comes from _Puppeteer_ by Google / Chrome DevTools team.  
 * Automation ( e.g SDET) and Devs like to use this one, primerly due to its support and clean APIs:
 
-* **How does it in code:** - [playwright_scraper.py](/indeed_scraper/modules/playwright_scraper.py) start the browser and apply stealth settings:
+* **How does it in code:** - [playwright_scraper.py](/modules/playwright_scraper.py) start the browser and apply stealth settings:
 
 ```python
 def _start_browser(self):
@@ -175,8 +175,8 @@ def _start_browser(self):
 - **Pros:** None. The concept is good, but the execution is flawed:
 - **Cons:** Unstable, buggy, and abandoned at this time:
 - see:
-    - [install_camoufox.sh](/indeed_scraper/maintance/install_camoufox.sh)
-    - [camoufox_cleanup.sh](/indeed_scraper/maintance/camoufox_cleanup.sh)
+    - [install_camoufox.sh](/maintance/install_camoufox.sh)
+    - [camoufox_cleanup.sh](/maintance/camoufox_cleanup.sh)
 
 ### 4. Standard Selenium:
 
