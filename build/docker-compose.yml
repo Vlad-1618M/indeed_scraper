@@ -1,0 +1,181 @@
+# =============================================================================
+#       *** Indeed Job Scraper - Docker Compose Configuration ***
+# =============================================================================
+#
+# Calls from project root:
+#   docker-compose -f build/docker-compose.yml build                    # <-- image build
+#   docker-compose -f build/docker-compose.yml run --rm scraper-auto    # <-- run automated scrape
+#   docker-compose -f build/docker-compose.yml run --rm scraper-interactive  # <-- run interactive mode
+#   docker-compose -f build/docker-compose.yml run --rm scraper-scheduled    # <-- run scheduled scrapes
+#
+# Custom Search Examples:
+#   docker-compose -f build/docker-compose.yml run --rm scraper-auto \
+#       python src/main.py --auto --scraper seleniumbase \
+#       --query "Software Engineer" --location "San Francisco" --max 50
+#
+#   docker-compose -f build/docker-compose.yml run --rm scraper-auto \
+#       python src/main.py --auto --scraper seleniumbase \
+#       --query "DevOps Engineer" --location "Remote" --remote \
+#       --min-salary 150000 --max-salary 250000 --days 7 --max 50 --screenshots
+#
+# =============================================================================
+
+services:
+  # ==================================================================================================
+  #                 *** AUTOMATED SCRAPER - Single run | use predefined parameters ***
+  # ==================================================================================================
+  scraper-auto:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    container_name: indeed-scraper-auto
+    volumes:
+      # ___ persist artifacts to host:
+      - ../artifacts:/app/artifacts
+      # ___ mount .env file for credentials | <-- Optional:
+      - ../.env:/app/.env:ro
+    environment:
+      # ___ Display for xvfb-run | <-- auto-selected but set fallback:
+      - DISPLAY=:99
+      - TZ=${TZ:-America/New_York}
+      # ___ proxy settings | <-- Optional:
+      - PROXY_SERVER=${PROXY_SERVER:-}
+      - PROXY_USER=${PROXY_USER:-}
+      - PROXY_PASS=${PROXY_PASS:-}
+    # ___ Default automated search - override with docker-compose run:
+    command: >
+      python src/main.py
+      --auto
+      --scraper seleniumbase
+      --query "DevOps Engineer"
+      --location "Remote"
+      --remote
+      --days 7
+      --max 25
+    # ___ Resource limits:
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+    # ___ Shared memory for Chromium:
+    shm_size: '2gb'
+
+  # ==================================================================================================
+  #                 *** INTERACTIVE SCRAPER - TTY mode for interactive prompts ***
+  # ==================================================================================================
+  scraper-interactive:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    container_name: indeed-scraper-interactive
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../.env:/app/.env:ro
+    environment:
+      - DISPLAY=:99
+      - TZ=${TZ:-America/New_York}
+    # ___ Enable TTY for interactive mode:
+    stdin_open: true
+    tty: true
+    command: python src/main.py --scraper seleniumbase
+    shm_size: '2gb'
+
+  # ==================================================================================================
+  #   *** SCHEDULED SCRAPER - Runs on a pre set schedule | <-- cron or external scheduler ***
+  # ==================================================================================================
+  scraper-scheduled:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    container_name: indeed-scraper-scheduled
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../.env:/app/.env:ro
+    environment:
+      - DISPLAY=:99
+      - TZ=${TZ:-America/New_York}
+    # ___ multiple searches in sequence:
+    command: >
+      /bin/bash -c "
+        echo '[*] Starting scheduled scrape at $(date)' &&
+        python src/main.py --auto --scraper seleniumbase \
+          --query 'DevOps Engineer' --location 'Remote' --remote --days 1 --max 20 &&
+        sleep 30 &&
+        python src/main.py --auto --scraper seleniumbase \
+          --query 'Site Reliability Engineer' --location 'Remote' --remote --days 1 --max 20 &&
+        sleep 30 &&
+        python src/main.py --auto --scraper seleniumbase \
+          --query 'Platform Engineer' --location 'Remote' --remote --days 1 --max 20 &&
+        echo '[+] Scheduled scrape completed at $(date)'
+      "
+    shm_size: '2gb'
+
+  # ==================================================================================================
+  #             *** PLAYWRIGHT SCRAPER - Alternative scraper using Playwright ***
+  # ==================================================================================================
+  scraper-playwright:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    container_name: indeed-scraper-playwright
+    volumes:
+      - ../artifacts:/app/artifacts
+    environment:
+      - DISPLAY=:99
+      - TZ=${TZ:-America/New_York}
+    command: >
+      python src/main.py
+      --auto
+      --scraper playwright
+      --query "DevOps Engineer"
+      --location "Remote"
+      --remote
+      --days 7
+      --max 25
+    shm_size: '2gb'
+
+  # ==================================================================================================
+  #             *** WITH PROXY - Scraper with residential proxy support ***
+  # ==================================================================================================
+  scraper-proxy:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    container_name: indeed-scraper-proxy
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../.env:/app/.env:ro
+    environment:
+      - DISPLAY=:99
+      - TZ=${TZ:-America/New_York}
+    # ___ Proxy credentials from .env or command line:
+    # ___ Create .env file with: PROXY_SERVER, PROXY_USER, PROXY_PASS:
+    command: >
+      python src/main.py
+      --auto
+      --scraper seleniumbase
+      --proxy "${PROXY_SERVER:-}"
+      --proxy-user "${PROXY_USER:-}"
+      --proxy-pass "${PROXY_PASS:-}"
+      --query "DevOps Engineer"
+      --location "Remote"
+      --remote
+      --days 7
+      --max 25
+    shm_size: '2gb'
+
+# =============================================================================
+#                             *** NETWORK ***
+# =============================================================================
+networks:
+  default:
+    name: indeed-scraper-network
+
+# =============================================================================
+#               *** VOLUMES | <-- optional persistent storage ***
+# =============================================================================
+volumes:
+  artifacts:
+    driver: local
