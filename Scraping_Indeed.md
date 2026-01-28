@@ -9,20 +9,22 @@
     - Non-authenticated sessions produced _Y_ results:
     - Incognito sessions produced _Z_ results:
 
-#### On the surface, everything looked correct and aligned with the search criteria.<br> However, it struck me as odd that identical search queries on _Indeed_ produced different results — assuming the same location, search criteria, and IP address were used.<br> This curiosity led me to write a scraper specifically dedicated to [indeed.com](https://www.indeed.com), built from scratch.<br>
-* I hope some of you may find it useful one day.<br>
-Yes, I’m fully aware that _Indeed_ will continue to modify and improve its scraping, bot, and automation detection — and frankly, they should.<br>
-That said, if you’ve encountered similar challenges before and know what you’re doing, it won’t take long to understand the approach ;0)<br>
-If this is new to you, this project can serve as a solid learning exercise or a promising starting point — and potentially time well saved.<br>
-In the meantime, enjoy it and make it better for everyone.<br>
-Good luck ;0)
+#### On the surface, everything looked correct and aligned with the search criteria.<br> However, it was odd that identical search queries on _Indeed_ produced different results — assuming the same location, search criteria, and IP address were used.<br> I got curios and wrote this scraper specifically dedicated to [indeed.com](https://www.indeed.com), built from scratch:<br>
+I hope some of you may find it useful one day.<br>
+> ___Yes, I’m fully aware that _Indeed_ will continue to modify and improve its scraping, bot, and automation detection — and frankly, they should.<br>
+That said, if you’ve encountered similar challenges before and know what you’re doing, it won’t take you long to understand the approach ;0)<br>
+If this is new to you, this project can serve as a solid learning exercise or a promising starting point — and potentially time well saved:<br>
+In the meantime, enjoy it and if you can, please, make it better for everyone:<br>
+Good luck ;0)___
 ---
 # Indeed Scraping with Bypassing Cloudflare detections:
-This readme is for anyone looking to scrape [indeed.com](https://www.indeed.com), even with no prior experience. <br> It explains the primary obstacle such as _Cloudflare_ anti scraping mechanism: <br>Details the different scraping tools inside: <br> Helps tp understand how proxy servers work, and gives a final, definitive recommendations for reliable and potentiallylong-term data extraction methods:
+Readme is for anyone looking to scrape [indeed.com](https://www.indeed.com): <br> It explains the primary obstacle such as _Cloudflare_ anti scraping mechanism: <br>Details the different scraping tools inside: <br> Helps tp understand how proxy servers work, and gives a final, definitive recommendations for reliable and potentially long term data extraction methods:
 
 ## Chapter 1: The Core Problem - Understanding _Cloudflare_:
 * At its heart, _scraping_ as a concept is pretty simple: <br>
 An automated script visits a website and copies information. <br> The _problem_ is that the websites like [indeed.com](https://www.indeed.com) don't *want* to be scraped by bots.<br> They employ security services to block them, and the most formidable of these is - [**Cloudflare**](https://www.cloudflare.com):
+
+![start](/docs/png_repo_screenshots/runtime_0.png)
 
 * Cloudflare acts as a gatekeeper, inspecting every visitor to determine if they are a real human or a bot. <br> If it detects a bot, it presents the infamous _"Additional Verification Required"_ page, effectively stopping the scraper in its tracks.
 
@@ -89,7 +91,7 @@ try:
             print("\n[*] Attempting Indeed login...")
             self.sb.uc_open_with_reconnect("https://secure.indeed.com/auth", reconnect_time=4)
 ```     
-* **Why It Works**: 
+* **Why THis one Worked**: 
     * The key is how it handles the Cloudflare checkbox. 
     * Instead of trying to use JavaScript to click it (which is easily detected), it uses a library called [**PyAutoGUI**](https://pyautogui.readthedocs.io/en/latest/) to take control of your *actual mouse cursor* and perform a *real click* on the screen. 
     * Succesfully mimics human click actions: 
@@ -152,7 +154,7 @@ def _start_browser(self):
         }
 ```
 
-* **Why it Fails:** 
+* **Why it Did Not Work:** 
     * Playwright is excellent for scraping unprotected sites:
     * However, it was consistently blocked by Cloudflare when navigating to the second page: 
     * I tried to replicate the _PyAutoGUI_ mouse-clicking logic, but it was not as reliable as SeleniumBase's tested implementation: 
@@ -164,7 +166,7 @@ def _start_browser(self):
 ### 3. Camoufox:
 * An anti-detect browser based on Firefox that promises to spoof your browser fingerprint to look like a different OS or browser:
 
-* **Why it Failed** 
+* **Why this one Failed** 
     * Camoufox was a complete failure. It was plagued by bugs that made it unusable:
         - 1.  **Version Mismatches:** - Python package and the browser binary it downloaded were out of sync, causing constant crashes:
         - 2.  **Critical Rendering Bugs:** - It had a font-rendering issue that turned all web page text into garbled symbols:
@@ -179,7 +181,7 @@ def _start_browser(self):
 ### 4. Standard Selenium:
 
 * The original, classic browser automation tool:
-* **Why it Fails** 
+* **Why Ii always fails on sites liek Indeed** 
 * Standard Selenium is instantly detected. 
 * It sets a _`navigator.webdriver`_ flag in the browser to _`true`_, which is like wearing a sign that says "I AM A BOT": 
 * It is not a good option for any modern/protected website, hence why I dont like it and woudl not use it, but still had to try tobe sure: 
@@ -270,7 +272,7 @@ And that shoudl do it: The scraper will automatically route all its traffic thro
 
 ### **Step 1: Use the SeleniumBase Scraper**
 - This is currently the only backend that consistently succeeds against Indeed’s interactive Cloudflare challenges, largely due to its real mouse and keyboard interaction model:
-- See [Demo](https://www.youtube.com/watch?v=2uSVOocKWGs)
+- See -> [Demo](https://www.youtube.com/watch?v=2uSVOocKWGs):
 
 ```bash
 # --> auto mode SeleniumBase call:
@@ -352,13 +354,13 @@ python src/main.py --auto --scraper seleniumbase --proxy "http://user:pass@proxy
 
 #### Combining _**SeleniumBase UC Mode**_ automation with the anonymity of a _**residential proxy**_, <br> You can create a scraper that is both resilient and difficult to detect,<br> Capable of achieving consistent or at least _repeatable results_ against one of the web’s more aggressive anti-bot systems:
 
-### P.S: <br> ...lets talk about containerizing this thing: 
+![runtime](/docs/png_repo_screenshots/runtime.png)
+
+### P.S: <br> ... lets talk about containerizing this thing: 
 - *Docker containers are intentionally not covered here when it comes to network settigns and use of proxies*: 
 - *While useful in many contexts, containerizing this setup increases resource overhead (notably GPU usage) and still relies on the local host’s ISP and network characteristics:*
 - *Which offers limited benefit for this particular use case, HOWEVER:*
-- *if you are anything like Me a __Docker Freak__  and like to put everything in container as oppose to some __python venv__ and such <br> read [Scraper_Docker_Setup.md](/docs/Scraper_Docker_Setup.md) which has everything you need for indeed scraper container support:* 
+- *if you are anything like Me a __Docker Freak__  and like to put everything in container as oppose to some __python venv__ and such, <br> go ahead and try [Scraper_Docker_Setup.md](/docs/Scraper_Docker_Setup.md) which has everything you need for indeed scraper container support:* 
 ---
 
 # Thank you !
-
-![runtime](/docs/png_repo_screenshots/runtime_0.png)
