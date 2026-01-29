@@ -18,7 +18,7 @@ In the meantime, enjoy it and if you can, please, make it better for everyone:<b
 Good luck ;0)___
 ---
 # Indeed Scraping with Bypassing Cloudflare detections:
-Readme is for anyone looking to scrape [indeed.com](https://www.indeed.com): <br> It explains the primary obstacle such as _Cloudflare_ anti scraping mechanism: <br>Details the different scraping tools inside: <br> Helps tp understand how proxy servers work, and gives a final, definitive recommendations for reliable and potentially long term data extraction methods:
+Readme is for anyone looking to scrape [indeed.com](https://www.indeed.com): <br> It explains the primary obstacle such as _Cloudflare_ anti scraping mechanism: <br>Details the different scraping tools inside: <br> Helps to understand how proxy servers work, and gives a final, definitive recommendations for reliable and potentially long term data extraction methods:
 
 ## Chapter 1: The Core Problem - Understanding _Cloudflare_:
 * At its heart, _scraping_ as a concept is pretty simple: <br>
@@ -158,7 +158,7 @@ def _start_browser(self):
     * Playwright is excellent for scraping unprotected sites:
     * However, it was consistently blocked by Cloudflare when navigating to the second page: 
     * I tried to replicate the _PyAutoGUI_ mouse-clicking logic, but it was not as reliable as SeleniumBase's tested implementation: 
-    * Cloudflare's fingerprinting is simply too advanced for the standard Playwright stealth plugins at thsi time: 
+    * Cloudflare's fingerprinting is simply too advanced for the standard Playwright stealth plugins at this time: 
 
 - **Pros:** Fast, modern, great for general purpose scraping:
 - **Cons:** Fails against advanced bot detectors like Cloudflare's:
@@ -184,20 +184,20 @@ def _start_browser(self):
 * **Why Ii always fails on sites liek Indeed** 
 * Standard Selenium is instantly detected. 
 * It sets a _`navigator.webdriver`_ flag in the browser to _`true`_, which is like wearing a sign that says "I AM A BOT": 
-* It is not a good option for any modern/protected website, hence why I dont like it and woudl not use it, but still had to try tobe sure: 
+* It is not a good option for any modern/protected website, hence why I dont like it and would not use it, but still had to try to be sure: 
 
 ---
 
 ## Chapter 3: Proxies - Optional:
 * Even with the _"best"_ scraper, you still have one final vulnerability: your own **IP address**. 
-* If you send hundreds of requests from the same IP, Cloudflare will notice the unusual activity and block you. This is where proxies come in.
+* If you send hundreds of requests from the same IP, Cloudflare will notice the unusual activity and block you:<br> This is where proxies come in:
 
 ### What is a Proxy Server ?
 * Think of a proxy as a **middleman**. 
 * Instead of your scraper connecting directly to a web ( in this case) [indeed.com](https://www.indeed.com) 
 * it connects to a proxy server, which then forwards the request to Indeed.com on your behalf:
 
->- **Standard or TYpicall Connection:**
+>- **Standard or Typicall Connection:**
 >   - `Your Computer --> Indeed.com`
 >- **Proxy Connection:**
 >   - `Your Computer --> Proxy Server --> Indeed.com`
@@ -263,12 +263,12 @@ def _start_browser(self):
     * It will look something like this: _`http://<username>:<password>@<proxy_provider_address>:<port>`_
         * **Real-world Example (for Bright Data):** _`http://brd-customer-hl_a1b2c3d4-zone-residential:z5y6x7w8v9@brd.superproxy.io:22225`_
 
-And that shoudl do it: The scraper will automatically route all its traffic through the residential proxy server:
+And that should do it: The scraper will automatically route all its traffic through the residential proxy server:
 
 ---
 ## Chapter 4: Final Recommendation:
 
-* After extensive testing, it’s clear that reliable, long-term scraping of Indeed.com is achievable, but remains subject to continuous platform changes. <br>For this reason, I’ve intentionally retained all four scraping options in the project to preserve flexibility as conditions evolve.
+* After extensive testing, it’s clear that reliable, long term scraping of Indeed.com is achievable, but remains subject to continuous platform changes. <br>For this reason, I’ve intentionally retained all four scraping options in the project to preserve flexibility as conditions evolve.
 
 ### **Step 1: Use the SeleniumBase Scraper**
 - This is currently the only backend that consistently succeeds against Indeed’s interactive Cloudflare challenges, largely due to its real mouse and keyboard interaction model:

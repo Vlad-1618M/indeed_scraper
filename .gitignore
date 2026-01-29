@@ -6,6 +6,7 @@ local_dev_notes
 downloaded_files
 artifacts
 .DS_Store
+maintance/drivers
 
 # Environment and secrets
 .env

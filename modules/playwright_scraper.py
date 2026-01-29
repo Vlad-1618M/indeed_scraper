@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
+# ___ -*- coding: utf-8 -*-:
 """
     Playwright Scraper Module:
     Uses JavaScript injection for DOM extraction to bypass selector issues:
@@ -15,7 +15,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 
 try:
     import pyautogui
-    pyautogui.FAILSAFE = False  # Disable fail-safe for automated use
+    pyautogui.FAILSAFE = False          # <-- Disable fail safe for automated use::
     PYAUTOGUI_AVAILABLE = True
 except ImportError:
     PYAUTOGUI_AVAILABLE = False
@@ -27,7 +27,7 @@ class PlaywrightIndeedScraper:
     """ Indeed scraper using Playwright with JavaScript injection:
         Uses JS to directly query the DOM, bypassing CSS selector issues: """
     
-    # JavaScript to extract all job data from the page
+    # ___ JavaScript to extract all job data from the page::
     EXTRACT_JOBS_JS = """
     () => {
         const jobs = [];
@@ -211,18 +211,15 @@ class PlaywrightIndeedScraper:
     }
     """
     
-    def __init__(self, headless=False, incognito=False, window_size="maximized", 
-                 proxy=None, screenshots=False, artifacts_dir=None):
-        """
-        Initialize Playwright scraper.
-        
+    def __init__(self, headless=False, incognito=False, window_size="maximized", proxy=None, screenshots=False, artifacts_dir=None):
+        """ Playwright scraper init:
         Args:
-            headless (bool): Run in headless mode
-            incognito (bool): Use incognito context
-            window_size (str): Window size - "maximized" or "WIDTHxHEIGHT"
-            proxy (dict): Proxy configuration
-            screenshots (bool): Enable screenshot capture
-            artifacts_dir (str): Base directory for artifacts
+            headless (bool):      <- Run in headless mode
+            incognito (bool):     <- Use incognito context
+            window_size (str):    <- Window size - "maximized" or "WIDTHxHEIGHT"
+            proxy (dict):         <- Proxy configuration
+            screenshots (bool):   <- Enable screenshot capture
+            artifacts_dir (str):  <- Base directory for artifacts
         """
         self.headless = headless
         self.incognito = incognito
@@ -234,7 +231,7 @@ class PlaywrightIndeedScraper:
         self.context = None
         self.page = None
         
-        # Setup screenshot directories
+        # ___ Setup screenshot directories:
         if artifacts_dir:
             self.artifacts_dir = Path(artifacts_dir)
         else:
@@ -247,7 +244,7 @@ class PlaywrightIndeedScraper:
             self.pages_dir.mkdir(parents=True, exist_ok=True)
             self.cards_dir.mkdir(parents=True, exist_ok=True)
         
-        # Start browser immediately
+        # ___ Start browser immediately:
         self._start_browser()
     
     def __enter__(self):
@@ -263,7 +260,7 @@ class PlaywrightIndeedScraper:
         print("[*] Starting Playwright browser...")
         self.playwright = sync_playwright().start()
         
-        # Browser launch options
+        # ___ Browser launch options:
         launch_options = {
             'headless': self.headless,
             'args': [
@@ -275,7 +272,7 @@ class PlaywrightIndeedScraper:
             ]
         }
         
-        # Add proxy if provided
+        # ___ Add proxy if provided:
         if self.proxy:
             launch_options['proxy'] = {
                 'server': self.proxy.get('server', ''),
@@ -284,10 +281,10 @@ class PlaywrightIndeedScraper:
                 launch_options['proxy']['username'] = self.proxy['username']
                 launch_options['proxy']['password'] = self.proxy.get('password', '')
         
-        # Launch browser
+        # ___ Launch browser:
         self.browser = self.playwright.chromium.launch(**launch_options)
         
-        # Parse window size
+        # ___ Parse window size:
         if self.window_size == "maximized":
             viewport = {'width': 1920, 'height': 1080}
         else:
@@ -297,7 +294,7 @@ class PlaywrightIndeedScraper:
             except:
                 viewport = {'width': 1920, 'height': 1080}
         
-        # Create context with anti-detection settings
+        # ___ Create context with anti detection settings:
         context_options = {
             'viewport': viewport,
             'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
@@ -311,7 +308,7 @@ class PlaywrightIndeedScraper:
         
         self.context = self.browser.new_context(**context_options)
         
-        # Add stealth scripts to evade detection
+        # ___ Add stealth scripts to evade detection:
         self.context.add_init_script("""
             // Remove webdriver flag
             Object.defineProperty(navigator, 'webdriver', {
@@ -350,10 +347,10 @@ class PlaywrightIndeedScraper:
             delete window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol;
         """)
         
-        # Create page
+        # ___ Create page:
         self.page = self.context.new_page()
         
-        # Set extra headers
+        # ___ Set extra headers:
         self.page.set_extra_http_headers({
             'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
@@ -365,25 +362,18 @@ class PlaywrightIndeedScraper:
         
         print("[+] Playwright browser started")
     
-    def scrape_jobs(self, query, location="", remote_only=False,
-                    min_salary=None, max_salary=None, date_posted=None,
-                    max_results=25):
-        """
-        Scrape Indeed jobs using JavaScript injection.
-        
-        Args:
-            query (str): Job search query
-            location (str): Job location
-            remote_only (bool): Remote filter
-            min_salary (int): Min salary
-            max_salary (int): Max salary
-            date_posted (int): Days filter
-            max_results (int): Max results
-            
-        Returns:
-            list: Job dictionaries
-        """
-        # Build URL
+    def scrape_jobs(self, query, location="", remote_only=False, min_salary=None, max_salary=None, date_posted=None, max_results=25):
+        """ Scrape Indeed jobs using JavaScript injection:
+            Args:
+                query (str):        <-- Job search query:
+                location (str):     <-- Job location:
+                remote_only (bool): <-- Remote filter:
+                min_salary (int):   <-- Min salary:
+                max_salary (int):   <-- Max salary:
+                date_posted (int):  <-- Days filter:
+                max_results (int):  <-- Max results:
+            Returns: list: Job dictionaries: """
+        # ___ Build url:
         params = []
         if query:
             params.append(f"q={quote_plus(query)}")
@@ -407,7 +397,7 @@ class PlaywrightIndeedScraper:
         print(f"{'='*80}")
         
         while len(all_jobs) < max_results:
-            # Build page URL
+            # ___ Build page url:
             if page_num > 0:
                 url = f"{base_url}&start={page_num * 10}"
             else:
@@ -416,30 +406,30 @@ class PlaywrightIndeedScraper:
             print(f"\n[*] Page {page_num + 1}: {url}")
             
             try:
-                # Navigate with realistic timing
+                # ___ Navigate with realistic timing:
                 self.page.goto(url, wait_until='domcontentloaded', timeout=30000)
                 
-                # Wait for page to stabilize
+                # ___ Wait for page to stabilize:
                 self._human_delay(3, 5)
                 
-                # Check for Cloudflare
+                # ___ Check for Cloudflare:
                 if self._is_cloudflare_challenge():
                     print("  [!] Cloudflare challenge detected")
                     
-                    # Try auto-click first
+                    # ___ Try auto-click first:
                     if PYAUTOGUI_AVAILABLE:
                         if self._click_cloudflare_checkbox():
-                            # Successfully solved
+                            # ___ Successfully solved:
                             pass
                         else:
-                            # Auto-click failed, ask for manual intervention
+                            # ___ Auto-click failed, ask for manual intervention:
                             print("="*60)
                             print("MANUAL INTERVENTION REQUIRED")
                             print("Auto-click failed. Please solve the challenge manually.")
                             print("="*60)
                             input("[*] Press Enter after completing the challenge...")
                     else:
-                        # PyAutoGUI not available
+                        # ___ PyAutoGUI not available:
                         print("="*60)
                         print("MANUAL INTERVENTION REQUIRED")
                         print("Please solve the challenge in the browser window.")
@@ -448,37 +438,37 @@ class PlaywrightIndeedScraper:
                     
                     self._human_delay(2, 3)
                     
-                    # Verify challenge is solved
+                    # ___ Verify challenge is solved:
                     if self._is_cloudflare_challenge():
                         print("  [!] Challenge still present after intervention")
                         print("  [*] Waiting for page to load...")
                         self._human_delay(5, 8)
                 
-                # Scroll through page to load all content
+                # ___ Scroll through page to load all content:
                 print("  [*] Scrolling page to load content...")
                 self._scroll_page()
                 
-                # Take full page screenshot if enabled
+                # ___ Take full page screenshot if enabled:
                 if self.screenshots:
                     print("  [*] Taking page screenshot...")
                     self._take_page_screenshot(page_num + 1, query, session_ts)
                 
-                # Use JavaScript injection to extract jobs
+                # ___ Use JavaScript injection to extract jobs:
                 print("  [*] Injecting JavaScript to extract job data...")
                 result = self.page.evaluate(self.EXTRACT_JOBS_JS)
                 
                 if not result or not result.get('jobs'):
-                    print(f"  [!] No jobs found via JS injection")
-                    print(f"  [*] Selector used: {result.get('selector', 'none')}")
-                    print(f"  [*] Total elements found: {result.get('totalFound', 0)}")
+                    print("\t\t[!] No jobs found via JS injection")
+                    print(f"\t\t[*] Selector used: {result.get('selector', 'none')}")
+                    print(f"\t\t[*] Total elements found: {result.get('totalFound', 0)}")
                     
-                    # Save debug screenshot
+                    # ___ Save debug screenshot:
                     if self.screenshots:
                         debug_path = self.pages_dir / f"debug_no_jobs_page{page_num + 1}.png"
                         self.page.screenshot(path=str(debug_path), full_page=True)
-                        print(f"  [*] Debug screenshot saved: {debug_path}")
+                        print(f"\t\t[*] Debug screenshot saved: {debug_path}")
                     
-                    # Try scrolling and retry
+                    # ___ Try scrolling and retry:
                     print("  [*] Scrolling page and retrying...")
                     self.page.evaluate("window.scrollTo(0, document.body.scrollHeight / 2)")
                     self._human_delay(2, 3)
@@ -491,17 +481,17 @@ class PlaywrightIndeedScraper:
                 js_jobs = result.get('jobs', [])
                 selector_used = result.get('selector', 'unknown')
                 
-                print(f"  [+] JS extracted {len(js_jobs)} jobs using: {selector_used}")
+                print(f"\t\t[+] JS extracted {len(js_jobs)} jobs using: {selector_used}")
                 
                 page_jobs = 0
                 for idx, js_job in enumerate(js_jobs):
                     if len(all_jobs) >= max_results:
                         break
                     
-                    # Convert JS job to our format
+                    # ___ Convert JS job to our format:
                     job_data = self._convert_js_job(js_job, query, location, page_num + 1)
                     
-                    # Check duplicates
+                    # ___ Check duplicates:
                     if job_data['job_key'] != "Not Available":
                         if any(j['job_key'] == job_data['job_key'] for j in all_jobs):
                             continue
@@ -510,7 +500,7 @@ class PlaywrightIndeedScraper:
                             continue
                     
                     if job_data['title'] != "Not Available":
-                        # Take job card screenshot if enabled
+                        # ___ Take job card screenshot if enabled:
                         if self.screenshots and js_job.get('boundingBox'):
                             screenshot_path = self._take_job_screenshot_by_coords(
                                 js_job['boundingBox'],
@@ -521,7 +511,7 @@ class PlaywrightIndeedScraper:
                         
                         all_jobs.append(job_data)
                         page_jobs += 1
-                        print(f"  [{len(all_jobs)}] {job_data['title'][:50]} | {job_data['company'][:25]}")
+                        print(f"\t\t[{len(all_jobs)}] {job_data['title'][:50]} | {job_data['company'][:25]}")
                 
                 if page_jobs == 0:
                     print("[*] No new jobs on this page")
@@ -530,15 +520,15 @@ class PlaywrightIndeedScraper:
                 if len(all_jobs) >= max_results:
                     break
                 
-                # Try to click Next button for pagination
+                # ___ Try to click Next button for pagination:
                 print("  [*] Looking for Next page button...")
                 if not self._click_next_page():
                     print("  [!] No Next button found, trying URL pagination...")
-                    # Fallback to URL-based pagination
+                    # ___ go back to url based pagination:
                     page_num += 1
                     continue
                 
-                # Human-like delay between pages
+                # ___ Human-like delay between pages:
                 self._human_delay(3, 6)
                 page_num += 1
                 
@@ -548,7 +538,7 @@ class PlaywrightIndeedScraper:
                     debug_path = self.pages_dir / f"timeout_page{page_num + 1}.png"
                     try:
                         self.page.screenshot(path=str(debug_path))
-                        print(f"  [*] Timeout screenshot saved: {debug_path}")
+                        print(f"\t\t[*] Timeout screenshot saved: {debug_path}")
                     except:
                         pass
                 break
@@ -564,22 +554,17 @@ class PlaywrightIndeedScraper:
         
         return all_jobs if all_jobs else None
     
-    # Alias for compatibility
+    # ___ Alias for compatibility:
     search_jobs = scrape_jobs
     
     def _convert_js_job(self, js_job, query, location, page_num):
-        """
-        Convert JavaScript-extracted job to our standard format.
-        
-        Args:
-            js_job (dict): Job data from JavaScript
-            query (str): Search query
-            location (str): Search location
-            page_num (int): Current page number
-            
-        Returns:
-            dict: Standardized job data
-        """
+        """ Convert JavaScript-extracted job to our standard format:
+            Args:
+                js_job (dict):  <-- Job data from JavaScript:
+                query (str):    <-- Search query:
+                location (str): <-- Search location:
+                page_num (int): <-- Current page number:
+            Returns: dict:      <-- Standardized job data:"""
         job_key = js_job.get('job_key')
         
         return {
@@ -598,17 +583,12 @@ class PlaywrightIndeedScraper:
         }
     
     def _take_page_screenshot(self, page_num, query, session_ts):
-        """
-        Take a FULL PAGE screenshot.
-        
-        Args:
-            page_num (int): Current page number
-            query (str): Search query
-            session_ts (str): Session timestamp
-            
-        Returns:
-            Path: Screenshot file path
-        """
+        """ Take a FULL PAGE screenshot:
+            Args:
+                page_num (int):    <-- Current page number:
+                query (str):       <-- Search query:
+                session_ts (str):  <-- Session timestamp:
+            Returns: Path:         <-- Screenshot file path: """
         try:
             safe_query = re.sub(r'[^\w\s-]', '', query).strip().replace(' ', '_')[:30]
             timestamp = datetime.now().strftime("%H%M%S")
@@ -616,30 +596,25 @@ class PlaywrightIndeedScraper:
             filename = f"page{page_num:02d}_{safe_query}_{session_ts}_{timestamp}.png"
             filepath = self.pages_dir / filename
             
-            # Playwright native full page screenshot
+            # ___ Playwright native full page screenshot:
             self.page.screenshot(path=str(filepath), full_page=True)
-            print(f"  [Screenshot] Full page saved: {filename}")
+            print(f"\t\t[Screenshot] Full page saved: {filename}")
             
             return filepath
         except Exception as e:
-            print(f"  [!] Screenshot error: {e}")
+            print(f"\t\t[!] Screenshot error: {e}")
             return None
     
     def _take_job_screenshot_by_coords(self, bounding_box, page_num, job_num, title, job_key, session_ts):
-        """
-        Take a screenshot of a specific job card using coordinates.
-        
-        Args:
-            bounding_box (dict): {x, y, width, height} from JS
-            page_num (int): Current page number
-            job_num (int): Job number
-            title (str): Job title
-            job_key (str): Job key
-            session_ts (str): Session timestamp
-            
-        Returns:
-            Path: Screenshot file path
-        """
+        """ Take a screenshot of a specific job card using coordinates:
+            Args:
+                bounding_box (dict):    <-- {x, y, width, height} from JS:
+                page_num (int):         <-- Current page number:
+                job_num (int):          <-- Job number:
+                title (str):            <-- Job title:
+                job_key (str):          <-- Job key:
+                session_ts (str):       <-- Session timestamp:
+            Returns: Path:              <-- Screenshot file path:"""
         try:
             safe_title = re.sub(r'[^\w\s-]', '', title).strip().replace(' ', '_')[:25]
             safe_key = job_key if job_key != "Not Available" else "nokey"
@@ -648,11 +623,11 @@ class PlaywrightIndeedScraper:
             filename = f"page{page_num:02d}_job{job_num:03d}_{safe_title}_{safe_key}_{timestamp}.png"
             filepath = self.cards_dir / filename
             
-            # Scroll element into view first
+            # ___ Scroll element into view first:
             self.page.evaluate(f"window.scrollTo(0, {bounding_box['y'] - 100})")
             self._human_delay(0.2, 0.4)
             
-            # Take screenshot with clip
+            # ___ Take screenshot with clip:
             self.page.screenshot(
                 path=str(filepath),
                 clip={
@@ -664,8 +639,9 @@ class PlaywrightIndeedScraper:
             )
             
             return filepath
-        except Exception as e:
-            # Fallback to viewport screenshot
+        except Exception as screeshots_error:
+            print(f"\n\t{screeshots_error}\n")
+            # ___ go back to viewport screenshot:
             try:
                 safe_title = re.sub(r'[^\w\s-]', '', title).strip().replace(' ', '_')[:25]
                 timestamp = datetime.now().strftime("%H%M%S")
@@ -673,19 +649,18 @@ class PlaywrightIndeedScraper:
                 filepath = self.cards_dir / filename
                 self.page.screenshot(path=str(filepath))
                 return filepath
-            except:
+            except Exception as error:
+                print(f"\n{error}\n")
                 return None
     
     def _scroll_page(self):
-        """
-        Scroll through the page to load lazy-loaded content.
-        """
+        """ Scroll through the page to load lazy-loaded content:"""
         try:
-            # Get page height
+            # ___ Get page height:
             page_height = self.page.evaluate("document.body.scrollHeight")
             viewport_height = self.page.evaluate("window.innerHeight")
             
-            # Scroll in increments
+            # ___ Scroll in increments:
             current_position = 0
             scroll_step = viewport_height * 0.8
             
@@ -694,34 +669,30 @@ class PlaywrightIndeedScraper:
                 self.page.evaluate(f"window.scrollTo(0, {current_position})")
                 self._human_delay(0.3, 0.6)
                 
-                # Update page height (might have loaded more content)
+                # ___ Update page height (might have loaded more content):
                 new_height = self.page.evaluate("document.body.scrollHeight")
                 if new_height > page_height:
                     page_height = new_height
             
-            # Scroll back to top
+            # ___ Scroll back to top:
             self.page.evaluate("window.scrollTo(0, 0)")
             self._human_delay(0.5, 1)
             
         except Exception as e:
-            print(f"  [!] Scroll error: {e}")
+            print(f"\t\t[!] Scroll error: {e}")
     
     def _click_next_page(self):
-        """
-        Click the Next page button.
-        
-        Returns:
-            bool: True if clicked successfully, False otherwise
-        """
+        """ Click the Next page button:
+            Returns: bool: True if clicked successfully, False otherwise: """
         try:
-            # Try multiple selectors for Next button
+            # ___ Try multiple selectors for Next button:
             next_selectors = [
                 'a[data-testid="pagination-page-next"]',
                 'a[aria-label="Next Page"]',
                 'a[aria-label="Next"]',
                 'nav[aria-label="pagination"] a:last-child',
                 'ul.pagination-list li:last-child a',
-                'a.np',  # Indeed's next page class
+                'a.np',     # <--Indeed's next page class:
                 '[data-testid="pagination"] a:has-text("Next")',
             ]
             
@@ -729,23 +700,24 @@ class PlaywrightIndeedScraper:
                 try:
                     next_btn = self.page.query_selector(selector)
                     if next_btn and next_btn.is_visible():
-                        # Scroll to button
+                        # ___ scroll to button:
                         next_btn.scroll_into_view_if_needed()
                         self._human_delay(0.5, 1)
                         
-                        # Click
+                        # ___ click:
                         next_btn.click()
-                        print(f"  [+] Clicked Next button: {selector}")
+                        print(f"\t\t[+] Clicked Next button: {selector}")
                         
-                        # Wait for navigation
+                        # ___ wait for navigation:
                         self.page.wait_for_load_state('domcontentloaded', timeout=15000)
                         self._human_delay(2, 4)
                         
                         return True
-                except:
+                except Exception as click_page_error:
+                    print(f"\n\t{click_page_error}\n")
                     continue
             
-            # Try JavaScript click as fallback
+            # ___ Try JavaScript click as fallback:
             clicked = self.page.evaluate("""
                 () => {
                     // Find Next link by text
@@ -771,13 +743,13 @@ class PlaywrightIndeedScraper:
             return False
             
         except Exception as e:
-            print(f"  [!] Next button click error: {e}")
+            print(f"\t\t[!] Next button click error: {e}")
             return False
     
     def _is_cloudflare_challenge(self):
         """Check if current page is Cloudflare challenge."""
         try:
-            # Use JS to check page content
+            # ___ Use JS to check page content:
             result = self.page.evaluate("""
                 () => {
                     const title = document.title.toLowerCase();
@@ -797,37 +769,31 @@ class PlaywrightIndeedScraper:
             """)
             
             if result.get('isCloudflare') and not result.get('hasJobCards'):
-                print(f"  [*] Page title: {result.get('title')}")
+                print(f"\t\t[*] Page title: {result.get('title')}")
                 return True
             return False
-        except:
+        except Exception as cloudflare_challeng_failed:
+            print(f"\n\t{cloudflare_challeng_failed}\n")
             return False
     
     def _click_cloudflare_checkbox(self, max_attempts=5):
-        """
-        Automatically click the Cloudflare Turnstile checkbox using PyAutoGUI.
-        
-        This mimics SeleniumBase's uc_gui_click_captcha() approach.
-        
-        Args:
-            max_attempts (int): Maximum click attempts
-            
-        Returns:
-            bool: True if challenge was solved, False otherwise
-        """
+        """  Automatically click the Cloudflare Turnstile checkbox using PyAutoGUI:
+             This mimics SeleniumBase's uc_gui_click_captcha() approach:
+                Args: max_attempts (int): <-- Maximum click attempts:
+                Returns: bool:            <-- True if challenge was solved, False otherwise: """
         if not PYAUTOGUI_AVAILABLE:
             print("  [!] PyAutoGUI not available for auto-click")
             return False
         
         print("  [*] Attempting to auto-click Cloudflare checkbox...")
         
-        # First, wait for the challenge to fully load
+        # ___ First, wait for the challenge to fully load:
         print("  [*] Waiting for Cloudflare challenge to load...")
         self._human_delay(2, 4)
         
         for attempt in range(max_attempts):
             try:
-                # Get browser window position
+                # ___ Get browser window position:
                 window_info = self.page.evaluate("""
                     () => {
                         return {
@@ -841,7 +807,7 @@ class PlaywrightIndeedScraper:
                     }
                 """)
                 
-                # Find the Cloudflare checkbox using multiple methods
+                # ___ Find the Cloudflare checkbox using multiple methods:
                 checkbox_info = self.page.evaluate("""
                     () => {
                         // Method 1: Find any iframe (Cloudflare embeds in iframe)
@@ -984,26 +950,26 @@ class PlaywrightIndeedScraper:
                 
                 if not checkbox_info.get('found'):
                     iframe_count = checkbox_info.get('iframeCount', 0)
-                    print(f"  [!] Attempt {attempt + 1}: Checkbox not found (iframes: {iframe_count})")
+                    print(f"\t\t[!] Attempt {attempt + 1}: Checkbox not found (iframes: {iframe_count})")
                     
-                    # Take a debug screenshot to see what's on the page
+                    # ___ Take a debug screenshot to see what's on the page:
                     if attempt == 0 and self.screenshots:
                         debug_path = self.pages_dir / f"debug_cloudflare_attempt{attempt + 1}.png"
                         self.page.screenshot(path=str(debug_path))
-                        print(f"  [*] Debug screenshot: {debug_path}")
+                        print(f"\t\t[*] Debug screenshot: {debug_path}")
                     
-                    # Wait longer for challenge to load
+                    # ___ Wait longer for challenge to load:
                     self._human_delay(2, 4)
                     continue
                 
-                print(f"  [*] Found {checkbox_info['type']} at ({checkbox_info['x']:.0f}, {checkbox_info['y']:.0f})")
-                print(f"  [*] Element size: {checkbox_info['width']:.0f}x{checkbox_info['height']:.0f}")
+                print(f"\t\t[*] Found {checkbox_info['type']} at ({checkbox_info['x']:.0f}, {checkbox_info['y']:.0f})")
+                print(f"\t\t[*] Element size: {checkbox_info['width']:.0f}x{checkbox_info['height']:.0f}")
                 
-                # Calculate screen coordinates
-                # Account for browser chrome (toolbar, etc.)
-                # macOS Chrome: ~85px, Windows Chrome: ~75px
+                # ___ Calculate screen coordinates:
+                # ___ Account for browser chrome (toolbar, etc.):
+                # ___ macOS Chrome: ~85px, Windows Chrome: ~75px:
                 import platform
-                if platform.system() == 'Darwin':  # macOS
+                if platform.system() == 'Darwin':  # ___ macOS:
                     browser_chrome_height = 85
                 else:
                     browser_chrome_height = 75
@@ -1011,44 +977,44 @@ class PlaywrightIndeedScraper:
                 screen_x = window_info['screenX'] + checkbox_info['x']
                 screen_y = window_info['screenY'] + browser_chrome_height + checkbox_info['y']
                 
-                print(f"  [*] Screen coordinates: ({screen_x:.0f}, {screen_y:.0f})")
+                print(f"\t\t[*] Screen coordinates: ({screen_x:.0f}, {screen_y:.0f})")
                 
-                # Add some randomness to the target
+                # ___ Add some randomness to the target:
                 target_x = screen_x + random.randint(-3, 3)
                 target_y = screen_y + random.randint(-3, 3)
                 
-                # Move mouse with human-like motion
+                # ___ Move mouse with human-like motion:
                 pyautogui.moveTo(
                     target_x, target_y,
                     duration=random.uniform(0.4, 0.8),
                     tween=pyautogui.easeOutQuad
                 )
                 
-                # Small pause before click (human behavior)
+                # ___ Small pause before click (human behavior):
                 time.sleep(random.uniform(0.15, 0.35))
                 
-                # Click
+                # ___ Click:
                 pyautogui.click()
-                print(f"  [+] Clicked at ({target_x:.0f}, {target_y:.0f})")
+                print(f"\t\t[+] Clicked at ({target_x:.0f}, {target_y:.0f})")
                 
-                # Wait for challenge to process
+                # ___ Wait for challenge to process:
                 print("  [*] Waiting for challenge to process...")
                 self._human_delay(4, 6)
                 
-                # Check if challenge is solved
+                # ___ Check if challenge is solved:
                 if not self._is_cloudflare_challenge():
                     print("  [+] Cloudflare challenge solved!")
                     return True
                 
-                print(f"  [!] Attempt {attempt + 1}: Challenge still present, retrying...")
+                print(f"\t\t[!] Attempt {attempt + 1}: Challenge still present, retrying...")
                 self._human_delay(1, 2)
                 
             except Exception as e:
-                print(f"  [!] Auto-click error: {e}")
+                print(f"\t\t[!] Auto-click error: {e}")
                 import traceback
                 traceback.print_exc()
                 
-        print("  [X] Failed to auto-solve Cloudflare challenge")
+        print("\n\t[X] Failed to auto-solve Cloudflare challenge:\n")
         return False
     
     def _human_delay(self, min_seconds=1, max_seconds=3):
@@ -1066,8 +1032,8 @@ class PlaywrightIndeedScraper:
             if self.playwright:
                 self.playwright.stop()
             print("[*] Playwright browser closed")
-        except Exception as e:
-            print(f"[!] Error closing browser: {e}")
+        except Exception as browser_off_error:
+            print(f"[!] Error closing browser: {browser_off_error}")
 
 
 if __name__ == "__main__":
