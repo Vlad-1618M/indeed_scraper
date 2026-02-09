@@ -364,3 +364,44 @@ python src/main.py --auto --scraper seleniumbase --proxy "http://user:pass@proxy
 ---
 
 # Thank you !
+---
+
+
+## ... almost forgot to mention:
+### Running this setup will cause SSD space consumption due to Chromium Bug:
+### I had to find it the hard way ...  
+```bash
+ sudo du -sh /private/var/* 2>/dev/null | sort -hr | head -n 50
+```
+![](/docs/png_repo_screenshots/chromium_bug_local.png)
+* And sure enough it was reported already by others see --> [code sign clone bug](https://github.com/teamcapybara/capybara/issues/2795)
+* All I needed was to search for it ... 🤦
+
+![](/docs/png_repo_screenshots/chromium_bug.png)
+
+### Keep an eye on your Mac's SSD size if you are a heavy selenium user:
+* You can run shell command manually to identify where / what has consumed your disk space:
+```bash
+    sudo du -sh /System/Volumes/Data/* 2>/dev/null | sort -hr | head -n 50
+    Password:
+    
+    461G /System/Volumes/Data/Users
+    60G	 /System/Volumes/Data/private
+    48G	 /System/Volumes/Data/Library
+    28G	 /System/Volumes/Data/Applications
+    11G	 /System/Volumes/Data/System
+    9.7G	/System/Volumes/Data/usr
+    7.6G	/System/Volumes/Data/opt
+    1.5M	/System/Volumes/Data/MobileSoftwareUpdate
+    1.0K	/System/Volumes/Data/home
+    0B	/System/Volumes/Data/Volumes
+    0B	/System/Volumes/Data/sw
+    0B	/System/Volumes/Data/mnt
+    0B	/System/Volumes/Data/cores
+```
+
+* and if this is a Chromim bug, this [chrome_cache_cleanup.sh](/maintance/chrome_cache_cleanup.sh) shell script should help: 
+
+---
+
+# Good Luck and as alwasy - make it better ;0)
