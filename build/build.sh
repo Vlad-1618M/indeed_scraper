@@ -1,17 +1,21 @@
 #!/bin/bash
 # =============================================================================
-#       *** Indeed Scraper - Docker Build & Run Helper ***
+#       *** Job Scraper - Docker Build & Run Helper ***
 # =============================================================================
 #
+# Boards: Indeed (cookies required), Dice, Glassdoor (no cookies)
+#
 # Usage:
-#   ./build.sh build              # Build the Docker image
-#   ./build.sh auto               # Run automated scrape (default search)
-#   ./build.sh auto "Python Developer" "New York"  # Custom search
-#   ./build.sh interactive        # Run interactive mode
-#   ./build.sh scheduled          # Run scheduled multi-search
-#   ./build.sh shell              # Open shell in container
-#   ./build.sh logs               # View container logs
-#   ./build.sh clean              # Remove containers and images
+#   ./build.sh build                    # Build the Docker image
+#   ./build.sh auto                     # Indeed automated (needs indeed_cookies.pkl)
+#   ./build.sh auto "Python Developer" "New York" 50  # Custom Indeed search
+#   ./build.sh dice                     # Dice automated (no cookies)
+#   ./build.sh glassdoor                # Glassdoor automated (no cookies)
+#   ./build.sh interactive              # Interactive mode (board selection)
+#   ./build.sh scheduled                # Multi-board scheduled scrape
+#   ./build.sh shell                    # Open shell in container
+#   ./build.sh logs                     # View container logs
+#   ./build.sh clean                    # Remove containers and images
 #
 # =============================================================================
 
@@ -57,21 +61,46 @@ cmd_build() {
     log_success "Docker image built successfully"
 }
 
-# ___ Run automated scrape:
+# ___ Run automated scrape (Indeed - requires cookies):
 cmd_auto() {
     local query="${1:-DevOps Engineer}"
     local location="${2:-Remote}"
     local max="${3:-25}"
     
-    log_info "Running automated scrape: '$query' in '$location' (max: $max)"
+    if [ ! -f "$PROJECT_ROOT/indeed_cookies.pkl" ]; then
+        log_warn "indeed_cookies.pkl not found. Indeed requires cookies."
+        log_info "Run locally: python modules/get_cookies.py --auto"
+        log_info "Or use: ./build.sh dice  (Dice, no cookies)"
+        exit 1
+    fi
+    log_info "Running Indeed automated scrape: '$query' in '$location' (max: $max)"
     docker-compose -f "$COMPOSE_FILE" run --rm scraper-auto python src/main.py \
-        --auto \
-        --scraper seleniumbase \
-        --query "$query" \
-        --location "$location" \
-        --remote \
-        --days 7 \
-        --max "$max"
+        --auto --board indeed \
+        --query "$query" --location "$location" --remote --days 7 --max "$max"
+    log_success "Scrape completed. Check ./artifacts/json/ for results."
+}
+
+# ___ Run Dice scrape (no cookies):
+cmd_dice() {
+    local query="${1:-DevOps Engineer}"
+    local location="${2:-Remote}"
+    local max="${3:-25}"
+    log_info "Running Dice automated scrape: '$query' in '$location' (max: $max)"
+    docker-compose -f "$COMPOSE_FILE" run --rm scraper-dice python src/main.py \
+        --auto --board dice \
+        --query "$query" --location "$location" --remote --days 7 --max "$max"
+    log_success "Scrape completed. Check ./artifacts/json/ for results."
+}
+
+# ___ Run Glassdoor scrape (no cookies):
+cmd_glassdoor() {
+    local query="${1:-Software Engineer}"
+    local location="${2:-Remote}"
+    local max="${3:-25}"
+    log_info "Running Glassdoor automated scrape: '$query' in '$location' (max: $max)"
+    docker-compose -f "$COMPOSE_FILE" run --rm scraper-glassdoor python src/main.py \
+        --auto --board glassdoor \
+        --query "$query" --location "$location" --remote --days 7 --max "$max"
     log_success "Scrape completed. Check ./artifacts/json/ for results."
 }
 
@@ -114,7 +143,7 @@ cmd_logs() {
 
 # ___ Clean up:
 cmd_clean() {
-    log_warn "This will remove all Indeed scraper containers and images."
+    log_warn "This will remove all job scraper containers and images."
     read -p "Continue? (y/N) " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -128,16 +157,18 @@ cmd_clean() {
 
 # ___ Show help:
 cmd_help() {
-    echo "Indeed Scraper - Docker Helper"
+    echo "Job Scraper - Docker Helper (Indeed, Dice, Glassdoor)"
     echo ""
     echo "Usage: ./build.sh <command> [args]"
     echo ""
     echo "Commands:"
     echo "  build                          Build the Docker image"
-    echo "  auto [query] [location] [max]  Run automated scrape"
-    echo "  interactive                    Run interactive mode"
-    echo "  scheduled                      Run scheduled multi-search"
-    echo "  proxy                          Run with proxy (requires .env)"
+    echo "  auto [query] [location] [max]  Indeed automated (needs cookies)"
+    echo "  dice [query] [location] [max]  Dice automated (no cookies)"
+    echo "  glassdoor [query] [loc] [max]  Glassdoor automated (no cookies)"
+    echo "  interactive                    Interactive mode (board selection)"
+    echo "  scheduled                      Multi-board scheduled scrape"
+    echo "  proxy                          Indeed with proxy (requires .env)"
     echo "  shell                          Open shell in container"
     echo "  logs                           View container logs"
     echo "  clean                          Remove containers and images"
@@ -145,14 +176,13 @@ cmd_help() {
     echo ""
     echo "Examples:"
     echo "  ./build.sh build"
-    echo "  ./build.sh auto"
-    echo "  ./build.sh auto 'Python Developer' 'San Francisco' 50"
+    echo "  ./build.sh auto                              # Indeed (needs indeed_cookies.pkl)"
+    echo "  ./build.sh dice 'Python Developer' Remote 50 # Dice, no cookies"
+    echo "  ./build.sh glassdoor 'DevOps' Remote 25      # Glassdoor"
     echo "  ./build.sh interactive"
     echo ""
-    echo "Environment Variables (for proxy):"
-    echo "  PROXY_SERVER  - Proxy server URL (e.g., http://proxy:8080)"
-    echo "  PROXY_USER    - Proxy username"
-    echo "  PROXY_PASS    - Proxy password"
+    echo "Indeed cookies: Run 'python modules/get_cookies.py --auto' locally first."
+    echo "Proxy: Set PROXY_SERVER, PROXY_USER, PROXY_PASS in .env"
 }
 
 # ___ Main:
@@ -161,6 +191,8 @@ check_docker
 case "${1:-help}" in
     build)       cmd_build ;;
     auto)        shift; cmd_auto "$@" ;;
+    dice)        shift; cmd_dice "$@" ;;
+    glassdoor)   shift; cmd_glassdoor "$@" ;;
     interactive) cmd_interactive ;;
     scheduled)   cmd_scheduled ;;
     proxy)       cmd_proxy ;;

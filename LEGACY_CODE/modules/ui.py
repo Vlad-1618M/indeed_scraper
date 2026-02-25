@@ -4,28 +4,6 @@
 """ UI Module: Handles interactive user interface and job browsing """
 
 import time
-
-def job_board_portal():
-    """ Prompt user for job board selection only:
-        Returns: str: <-- Board name ('indeed', 'glassdoor', or 'dice'): """
-    
-    print("\nSelect job board:")
-    print("\t\t1. -> Indeed")
-    print("\t\t2. -> Glassdoor")
-    print("\t\t3. -> Dice")
-    choice = input("Enter choice (1-3, default 1): ").strip() or "1"
-    
-    if choice == "1":
-        return "indeed"
-    elif choice == "2":
-        return "glassdoor"
-    elif choice == "3":
-        return "dice"
-    else:
-        print("[!] Invalid choice, defaulting to Indeed")
-        return "indeed"
-    
-
 def display_jobs_interactive(jobs):
     """Interactive job browser with pagination:
         Args: <-- jobs (list): List of job dictionaries:"""
@@ -53,20 +31,16 @@ def display_jobs_interactive(jobs):
                 print(f"   Salary: {job['salary']}")
             print(f"   URL: {job['url']}")
             if job['snippet'] != "N/A":
-                snippet = job['snippet'][:100]
-                print(f"   Snippet: {snippet}...")
+                print(f"   Snippet: {job['snippet'][:100]}...")
             print(f"   {'-'*76}")
         
         print("\nNavigation:")
-        next_page_label = f" ({current_page + 2}/{total_pages})" if current_page < total_pages - 1 else " (end)"
-        prev_page_label = f" ({current_page}/{total_pages})" if current_page > 0 else " (start)"
-        
-        print(f"  [n] Next page{next_page_label}")
-        print(f"  [p] Previous page{prev_page_label}")
+        print("  [n] Next page" + (f" ({current_page + 2}/{total_pages})" if current_page < total_pages - 1 else " (end)"))
+        print("  [p] Previous page" + (f" ({current_page}/{total_pages})" if current_page > 0 else " (start)"))
         print("  [#] View job details (enter job number)")
         print("  [q] Quit and close browser")
         
-        choice = input("\nChoice: ").strip().lower()
+        choice = input("\nEnter choice: ").strip().lower()
         
         if choice == 'n' and current_page < total_pages - 1:
             current_page += 1
@@ -79,7 +53,7 @@ def display_jobs_interactive(jobs):
             if 0 <= job_num < len(jobs):
                 display_job_details(jobs[job_num])
             else:
-                print(f"Invalid number. Enter 1-{len(jobs)}")
+                print(f"Invalid job number. Enter 1-{len(jobs)}")
                 time.sleep(1)
         else:
             print("Invalid choice")
@@ -97,9 +71,9 @@ def display_job_details(job):
     print(f"Location: {job['location']}")
     print(f"Salary: {job['salary']}")
     print(f"Posted: {job['posted']}")
-    print("\nDescription:")
+    print("\nDescription Snippet:")
     print(f"{job['snippet']}")
-    print(f"\nApply: {job['url']}")
+    print(f"\nApply at: {job['url']}")
     print(f"{'='*80}")
     input("\nPress Enter to continue...")
 
@@ -114,29 +88,9 @@ def prompt_interactive_config():
     
     config = {}
     
-    # # __ select job board:
-    # print("\nSelect job board:")
-    # print("  1. Indeed")
-    # print("  2. Glassdoor")
-    # job_board = input("Enter choice (1-2, default 1): ").strip() or "1"
-    
-    # if job_board == "1":
-    #     config['board'] = "indeed"
-    # elif job_board == "2":
-    #     config['board'] = "glassdoor"
-    # else:
-    #     print("[!] Invalid choice, defaulting to Indeed")
-    #     config['board'] = "indeed"
-    
     config['query'] = input("\nJob title (e.g., 'SDET'): ") or "Software Engineer"
-    location_input = input("Location (empty for Remote): ")
+    config['location'] = input("Location (empty for Remote): ") or "Remote"
     config['remote_only'] = input("Remote only? (y/n): ").lower() == 'y'
-    
-    # ___ if remote_only, ignore location input:
-    if config['remote_only']:
-        config['location'] = ""
-    else:
-        config['location'] = location_input or "Remote"
     
     use_salary = input("Salary filter? (y/n): ").lower() == 'y'
     if use_salary:
@@ -153,23 +107,25 @@ def prompt_interactive_config():
     
     return config
 
-# def prompt_login():
-#     """ Prompt user for login credentials:
-#         Returns: tuple: <-- (email, password) or (None, None) if no login:"""
+
+def prompt_login():
+    """ Prompt user for login credentials:
+        Returns: tuple: <-- (email, password) or (None, None) if no login:"""
     
-#     use_login = input("\nLogin? (y/n): ").lower() == 'y'
+    use_login = input("\nLogin? (y/n): ").lower() == 'y'
     
-#     if use_login:
-#         email = input("Indeed email: ")
-#         password = input("Indeed password: ")
-#         return email, password
+    if use_login:
+        email = input("Indeed email: ")
+        password = input("Indeed password: ")
+        return email, password
     
-#     return None, None
+    return None, None
+
+
 def print_header(title):
     """ Print formatted header:
         Args: title (str): Header title:"""
     print(f"\n\n\t*** {title.upper()} ***")
-
 
 def print_summary(total_queries, total_jobs, start_time, end_time):
     """ Print scraping summary:
@@ -178,8 +134,8 @@ def print_summary(total_queries, total_jobs, start_time, end_time):
             total_jobs (int): Total jobs scraped
             start_time (datetime): Start time
             end_time (datetime): End time: """
-    from modules.file_utils import format_timestamp
     
+    from modules.file_utils import format_timestamp
     print(f"\n{'='*80}")
     print("Summary")
     print(f"{'='*80}")
