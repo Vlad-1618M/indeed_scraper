@@ -2,11 +2,15 @@
 # Indeed Scraper - Git Ignore
 # =============================================================================
 # local dev:
-local_dev_notes
+_DEBUG
+_local_dev_notes
+_dev_searched_data
 downloaded_files
 artifacts
 .DS_Store
 maintance/drivers
+indeed_cookies.pkl*
+docker-compose.override.yml
 
 # Environment and secrets
 .env

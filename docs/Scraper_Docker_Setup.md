@@ -1,16 +1,17 @@
 
-# Containerized Indeed Scraper Setup:
+# Containerized Job Scraper Setup (Indeed, Dice, Glassdoor)
+
+See [README.md](/README.md) for design notes and per-board details.
 
 ## Table of Contents:
 
 1. [**Prerequisites**](#prerequisites)
-2. [**Project Structure**](#project-structure)
-3. [**Environment Configuration**](#environment-configuration)
+2. [**Environment Configuration**](#environment-configuration)
 4. [**Understanding Xvfb & Entrypoint**](#understanding-xvfb--entrypoint)
 5. [**Build the Image**](#build-the-image)
 6. [**Docker Compose Commands**](#docker-compose-commands)
 7. [**Helper Script**](#helper-script)
-8. [**Debugging & Troubleshooting**](#debugging--troubleshooting)
+8. [**Debugging Help**](#debugging-help)
 9. [**Output Artifacts**](#output-artifacts)
 
 ---
@@ -23,44 +24,23 @@
 | Docker Compose | 2.0+ | `docker-compose --version` |
 
 ---
-
-## Project Structure
-
-```
--------------------------------------------------------------------------------------
-indeed_scraper/
-├── build                        <- Conteiner Build modules:
-│   ├── build.sh                 <- Helper script for common tasks:
-│   ├── docker-compose.yml       <- Service orchestration:
-│   ├── Dockerfile               <- Container image definition:
-│   └── entrypoint.sh            <- Xvfb startup + Container DISPLAY export:
-├── docs
-│   ├── Scraper_Docker_Setup.md  <- Conteiner Build Docs and How To:
-│   ├── Scraping_Indeed.md       <- Local OS Build Docs and How To:
-│   └── SETUP.md                 <- Notes:
-├── LICENSE
-├── .env.example                 <- Environment variables template fro containers:
-├── maintance                   
-│   ├── camoufox_cleanup.sh
-│   └── install_camoufox.sh
-├── modules                      <- Python modules:
-│   ├── __init__.py
-│   ├── args_parser.py           <- Argparser module:
-│   ├── camoufox_scraper.py      <- Camoufox C++ python wrapper scraper:
-│   ├── file_utils.py            <- Artifacts Manager module:
-│   ├── playwright_scraper.py    <- Playwright scraper:
-│   ├── selenium_scraper.py      <- Selenium Standard scraper:
-│   ├── seleniumbase_scraper.py  <- SeleniumBase scraper:
-│   └── ui.py                    <- ui Logic module:
-├── requirements.txt             <- Python dependencies:
-└── src                         
-    └── main.py                  <- Main scraper:
--------------------------------------------------------------------------------------
-```
-
----
-
 ## Environment Configuration:
+
+### Cookie Override for Indeed:
+
+Indeed requires cookies. Create them on your host (needs a display for login):
+
+```bash
+python modules/get_cookies.py
+```
+
+Then enable the cookie mount for Docker:
+
+```bash
+cp build/docker-compose.override.example.yml docker-compose.override.yml
+```
+
+Without this override, `scraper-auto` and `scraper-interactive` will fail with "NO COOKIES FOUND". Use `scraper-dice` or `scraper-glassdoor` for cookie-free runs.
 
 ### Step 1: Create `.env` file
 
@@ -223,14 +203,14 @@ docker-compose -f build/docker-compose.yml run --rm scraper-auto
 >- Custom search:
 ```bash
 docker-compose -f build/docker-compose.yml run --rm scraper-auto \
-    python src/main.py --auto --scraper seleniumbase \
+    python src/main.py --auto --board indeed \
     --query "Python Developer" --location "Remote" --max 50
 ```
 ---
 >- With screenshots:
 ```bash
 docker-compose -f build/docker-compose.yml run --rm scraper-auto \
-    python src/main.py --auto --scraper seleniumbase \
+    python src/main.py --auto --board indeed \
     --query "DevOps Engineer" --location "Remote" --remote \
     --max 25 --screenshots
 ```
@@ -238,7 +218,7 @@ docker-compose -f build/docker-compose.yml run --rm scraper-auto \
 >- With salary filter + days old + screenshots:
 ```bash
 docker-compose -f build/docker-compose.yml run --rm scraper-auto \
-    python src/main.py --auto --scraper seleniumbase \
+    python src/main.py --auto --board indeed \
     --query "Sr Software Engineer" --location "Remote" --remote --min-salary 150000 --max-salary 250000 --days 7 --max 50 --screenshots
 ```
 ![auto_scraper](/docs/png_repo_screenshots/auto_scraper.png)
@@ -246,7 +226,7 @@ docker-compose -f build/docker-compose.yml run --rm scraper-auto \
 >- Salary + screenshots:
 ```bash
 docker-compose -f build/docker-compose.yml run --rm scraper-auto \
-    python src/main.py --auto --scraper seleniumbase \
+    python src/main.py --auto --board indeed \
     --query "Sr.Python Developer" --location "Remote" --remote \
     --min-salary 150000 --max-salary 250000 \
     --days 7 --max 50 --screenshots
@@ -255,7 +235,7 @@ docker-compose -f build/docker-compose.yml run --rm scraper-auto \
 >- Remote only + recent posts:
 ```bash
 docker-compose -f build/docker-compose.yml run --rm scraper-auto \
-    python src/main.py --auto --scraper seleniumbase \
+    python src/main.py --auto --board indeed \
     --query "Platform Engineer" --location "Remote" --remote \
     --days 3 --max 25
 ```
@@ -272,10 +252,14 @@ docker-compose -f build/docker-compose.yml run --rm scraper-interactive
 docker-compose -f build/docker-compose.yml run --rm scraper-scheduled
 ```
 
-### Playwright Scraper:
->- Alternative scraper | <-- better Cloudflare bypass:
+### Glassdoor Scraper (no cookies):
 ```bash
-docker-compose -f build/docker-compose.yml run --rm scraper-playwright
+docker-compose -f build/docker-compose.yml run --rm scraper-glassdoor
+```
+
+### Dice Scraper (no cookies):
+```bash
+docker-compose -f build/docker-compose.yml run --rm scraper-dice
 ```
 
 ### With Proxy:
@@ -314,15 +298,17 @@ build/build.sh
 
 | Command | Description |
 |---------|-------------|
-| _build_ | Build Docker image: |
-| _auto [query] [location] [max]_ | Run automated scrape: |
-| _interactive_ | Run interactive mode: |
-| _scheduled_ | Run scheduled multi-search: |
-| _proxy_ | Run with proxy (needs .env): |
-| _shell_ | Open bash shell in container: |
-| _logs_ | View container logs: |
-| _clean_ | Remove containers + images: |
-| _help_ | Show help: |
+| _build_ | Build Docker image |
+| _auto [query] [location] [max]_ | Indeed automated (needs cookies) |
+| _dice [query] [location] [max]_ | Dice automated (no cookies) |
+| _glassdoor [query] [location] [max]_ | Glassdoor automated (no cookies) |
+| _interactive_ | Interactive mode (board selection) |
+| _scheduled_ | Multi-board scheduled scrape |
+| _proxy_ | Indeed with proxy (needs .env) |
+| _shell_ | Open bash shell in container |
+| _logs_ | View container logs |
+| _clean_ | Remove containers + images |
+| _help_ | Show help |
 
 ### Examples:
 >- Build image:
@@ -381,7 +367,7 @@ xdpyinfo -display :99
 ```
 >- Run scraper:
 ```bash
-python src/main.py --auto --scraper seleniumbase --query "DevOps Engineer" --location "Remote" --max 5
+python src/main.py --auto --board indeed --query "DevOps Engineer" --location "Remote" --max 5
 ```
 
 ### Xvfb Installation Check: 
@@ -419,7 +405,7 @@ docker-compose -f build/docker-compose.yml run --rm scraper-auto /bin/bash -c 'e
 
 >- Run with screenshots enabled:
 ```bash
-docker-compose -f build/docker-compose.yml run --rm scraper-auto python src/main.py --auto --scraper seleniumbase --query "test" --location "Remote" --max 5 --screenshots
+docker-compose -f build/docker-compose.yml run --rm scraper-auto python src/main.py --auto --board indeed --query "test" --location "Remote" --max 5 --screenshots
 
 # output check
 ls -la artifacts/screenshots/
@@ -556,7 +542,7 @@ open artifacts/screenshots/pages/*.png
 
 >- Every Monday at 8am:
 ```bash
-0 8 * * 1 cd /path/to/indeed_scraper && docker-compose -f build/docker-compose.yml run --rm scraper-auto python src/main.py --auto --scraper seleniumbase --query "Senior DevOps" --min-salary 180000 --max-salary 250000 --remote --days 7
+0 8 * * 1 cd /path/to/indeed_scraper && docker-compose -f build/docker-compose.yml run --rm scraper-auto python src/main.py --auto --board indeed --query "Senior DevOps" --min-salary 180000 --max-salary 250000 --remote --days 7
 ```
 
 ---
@@ -621,7 +607,7 @@ docker-compose -f build/docker-compose.yml run --rm scraper-auto
 ```
 >- Run custom:
 ```bash
-docker-compose -f build/docker-compose.yml run --rm scraper-auto python src/main.py --auto --scraper seleniumbase --query "Your Query" --location "Remote" --max 50
+docker-compose -f build/docker-compose.yml run --rm scraper-auto python src/main.py --auto --board indeed --query "Your Query" --location "Remote" --max 50
 ```
 
 ### Debug:

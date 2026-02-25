@@ -1,373 +1,312 @@
-# Preamble:
+# Scraper:
 
-#### Like many of us in early 2025, I discovered that my Staff Software Engineering role had been “selected” as part of an ongoing workforce reduction — simply put, a layoff.<br> Despite the work and meaning behind it, I had to lay off my entire team myself, and soon enough I found myself scrolling through _Indeed_ endlessly — for days, then months, and eventually nearly a full year.<br>
+## Preamble: - Scraper's Origin Story:
 
-#### During this time, I began to notice what I initially thought was intentionally filtered behavior on _Indeed_.<br> Presumably, this is designed to customize the job search experience and improve results. However, at least in my case, I started seeing patterns that appeared to limit or alter my search results and its existing filters.<br>
+Like many of us in early 2025, I discovered that my Staff Software Engineering role had been “selected” as part of an ongoing workforce reduction—simply put, a layoff. Despite the work and meaning behind it, I had to lay off my entire team myself, and soon enough I found myself scrolling through *Indeed* endlessly—for days, then months, and eventually nearly a full year.
 
-* For example:
-    - Logged-in sessions produced _X_ results:  
-    - Non-authenticated sessions produced _Y_ results:
-    - Incognito sessions produced _Z_ results:
+During this time, I began to notice what I initially thought was intentionally filtered behavior on *Indeed*. Logged-in sessions produced different results than non-authenticated or incognito sessions for the exact same search query. That discrepancy got me a bit curious, so I wrote a scraper dedicated to indeed.com, which I hoped others might find useful.
 
-#### On the surface, everything looked correct and aligned with the search criteria.<br> However, it was odd that identical search queries on _Indeed_ produced different results — assuming the same location, search criteria, and IP address were used.<br> I got curios and wrote this scraper specifically dedicated to [indeed.com](https://www.indeed.com), built from scratch:<br>
-I hope some of you may find it useful one day.<br>
-> ___Yes, I’m fully aware that _Indeed_ will continue to modify and improve its scraping, bot, and automation detection — and frankly, they should.<br>
-That said, if you’ve encountered similar challenges before and know what you’re doing, it won’t take you long to understand the approach ;0)<br>
-If this is new to you, this project can serve as a solid learning exercise or a promising starting point — and potentially time well saved:<br>
-In the meantime, enjoy it and if you can, please, make it better for everyone:<br>
-Good luck ;0)___
----
-# Indeed Scraping with Bypassing Cloudflare detections:
-Readme is for anyone looking to scrape [indeed.com](https://www.indeed.com): <br> It explains the primary obstacle such as _Cloudflare_ anti scraping mechanism: <br>Details the different scraping tools inside: <br> Helps to understand how proxy servers work, and gives a final, definitive recommendations for reliable and potentially long term data extraction methods:
+That original project was a deep dive into bypassing [Cloudflare](https://support.indeed.com/hc/en-us/articles/33465379855501-Troubleshooting-Cloudflare-Errors)'s formidable anti-bot measures. However, the digital landscape is always changing. This document outlines the evolution of that scraper, the architectural pivot it required, and its expansion into a multi-board tool.
 
-## Chapter 1: The Core Problem - Understanding _Cloudflare_:
-* At its heart, _scraping_ as a concept is pretty simple: <br>
-An automated script visits a website and copies information. <br> The _problem_ is that the websites like [indeed.com](https://www.indeed.com) don't *want* to be scraped by bots.<br> They employ security services to block them, and the most formidable of these is - [**Cloudflare**](https://www.cloudflare.com):
+> ___Yes, I’m fully aware that job boards will continue to modify and improve their scraping, bot, and automation detection—and frankly, they should.<br> This project is intended as a learning exercise and a practical tool for those who understand the challenges.<br> And If you can, I encourage you to make it better for everyone: <br>Good luck ;0)___
 
-![start](/docs/png_repo_screenshots/runtime_0.png)
+## Side Note:
+### I was able to find refs online for indeed's so called  ___"a strategic shift toward a closed, identity-first ecosystem"___
+- https://aimgroup.com/2025/11/26/indeed-ends-anonymous-alerts-tightening-its-grip-on-job-seekers/
+![alt text](/docs/png_repo_screenshots/updates/image.png)
+- https://www.indeed.com/legal
+![legal](/docs/png_repo_screenshots/updates/indeed_policy.png)
 
-* Cloudflare acts as a gatekeeper, inspecting every visitor to determine if they are a real human or a bot. <br> If it detects a bot, it presents the infamous _"Additional Verification Required"_ page, effectively stopping the scraper in its tracks.
-
-### How Cloudflare Detects Bots:
-
-Cloudflare uses a sophisticated, multi-layered approach to detection. <br>So the scraper must be able, somehow, _bypass_ all of these checks:
-
-1.  **IP Reputation:** The most basic check. 
-    * If your requests come from a known datacenter IP address (like AWS, Google Cloud, or a VPN), you are immediately suspicious. 
-    * Real users have **residential IPs** from Internet Service Providers (ISPs) like Comcast, At&t or Verizon:
-
-2.  **Browser Fingerprinting:** Cloudflare inspects your browser for tell-tale signs of automation. 
-    * These include:
-        * _navigator.webdriver_: - This flag is `navigator.webdriver=True` in most standard automation browsers:
-        * **Headless Mode:** Running a browser without a visible UI is a dead giveaway:
-        * **Browser Properties:** Inconsistencies in screen resolution, plugins, fonts, and language settings can reveal a bot:
-
-3.  **Behavioral Analysis:** Cloudflare watches *how* you interact with the page. _Bots are often clumsy_:
-    *   **Mouse Movements:** Instant, linear mouse movements are robotic. Humans move the mouse in slight curves:
-    *   **Click Patterns:** Clicking the exact center of a button every time is unnatural:
-    *   **Typing Speed:** Typing too fast or with perfect consistency is a red flag:
-
-4.  **TLS/HTTP2 Fingerprinting:** The very first connection your scraper makes has a unique technical signature (a "fingerprint"). 
-    * Cloudflare maintains a massive database of these fingerprints and can block known automation libraries before they even load the page:
-
-5.  **Interactive Challenges:** If all else fails, Cloudflare presents the "Verify you are human" checkbox (known as **Turnstile** or **reCAPTCHA**)    
-    * This is the final point, designed to be clicked by a human, not a script:
+- ___Bottom line: Indeed treats these changes as security and product decisions, not developer-facing API updates:___
 
 ---
 
-<!-- ## Chapter 2: The ToolBox - What Scraping Tools can be used to get through: -->
-## Chapter 2: The Toolbox — Scraping Backends:
-* After researching, testing, and experimenting, I've found four different scraping backends to determine the most effective tool for the job:
-    * __I’ll be upfront__ - I am not a fan of _Selenium_ at all and I would typically avoid it completely in any professional setting at all costs: 
-* However, I must admit that _SeleniumBase_ proved to be the best fit for this use case: 
-    * Primarily due to its use of _PyAutoGUI_ to simulate real user interactions: 
-    * For those who have been around long enough may recognize _PyAutoGUI_ lib from the earlier days of UX automation techniques used in sales and product demonstrations:
+## From Cloudflare Bypass attempt to a Cookie-First Strategy:
 
-## Here is a high-level comparison:
+The initial repository version  was dedicated to a single, complex problem: - 
+___Scraping Indeed while navigating Cloudflare's aggressive bot detection.___ <br>
+The primary obstacle was the neverending "Additional Verification Required" page, which uses a multi-layered approach including:<br> 
+* IP reputation: <br>
+Browser fingerprinting, <br>
+... as well as behavioral analysis to block automated scripts:
 
-| Scraper Backend | Cloudflare Bypass | Stability | Recommendation |
-| :--- | :--- | :--- | :--- |
-| [**SeleniumBase (UC Mode)**](https://seleniumbase.io/): | **Excellent** | **High** | **Strongly recommended at the time of this document writing**: |
-| [Playwright](https://playwright.dev/python/docs/intro): | Poor | High | Suitable for unprotected sites, but unreliable against Cloudflare: |
-| [Camoufox](https://camoufox.com/): | Failed | Very Low | Experimental _C++_ based lib, yet buggy and unstable: |
-|          |        |          | I kept it here for reference — at the time of writing, _Cloudflare_ effectively blocks this approach: |
-|          |        |          | I hope _Camoufox_ dev team can make it work: 
-|          |        |          | ...  the Idea is great and alsmot perfect, just did not work for this use case: |
-| [Standard Selenium](https://www.selenium.dev/documentation/): | Very Poor | High | Not an option at all: Fails almost immediately. Included only for completeness: |
+___
+## The Original Approach: ( ___Legacy___ )
 
-### 1. SeleniumBase UC Mode:
-* **SeleniumBase** - is a framework built on top of Selenium that adds some extra features, including special _"Undetected-Chromedriver"_ or <br> _UC_ mode designed specifically to evade bot detections for one:
+The initial solution involved testing multiple browser automation backends to find one that could reliably mimic human interaction. The most successful of these was **SeleniumBase in UC (Undetected-Chromedriver) Mode**, primarily for its ability to use **PyAutoGUI** to perform a real mouse click on the Cloudflare challenge checkbox. This method was effective for a time, allowing the scraper to navigate through paginated results. Other tools like Playwright and Camoufox were tested but failed against Cloudflare's advanced fingerprinting.
 
-* **How does it in code:** - [seleniumbase_scraper.py](/modules/seleniumbase_scraper.py) inits the scraper with _uc=True_:
+For historical context and a deeper understanding of the original challenge, the original [README.md](/LEGACY_CODE/README.md) detailing this approach is preserved in the [LEGACY_CODE](/LEGACY_CODE/) directory.
 
-```python
-from seleniumbase import SB
-with SB(uc=True, headless=self.headless, ...) as self.sb:
-    # SB() in UC mode patches the browser:
-    self.sb.uc_open_with_reconnect(url, reconnect_time=5)
-```
-```python
-try:
-            print("\n[*] Attempting Indeed login...")
-            self.sb.uc_open_with_reconnect("https://secure.indeed.com/auth", reconnect_time=4)
-```     
-* **Why THis one Worked**: 
-    * The key is how it handles the Cloudflare checkbox. 
-    * Instead of trying to use JavaScript to click it (which is easily detected), it uses a library called [**PyAutoGUI**](https://pyautogui.readthedocs.io/en/latest/) to take control of your *actual mouse cursor* and perform a *real click* on the screen. 
-    * Succesfully mimics human click actions: 
-```python
-    def _handle_cloudflare(self):
-            """ Handle Cloudflare challenge using SeleniumBase UC Mode.
-                Returns: bool: True if challenge was detected and handled """
-            if not self._is_cloudflare_challenge():
-                return False
-        
-```
+----
+## NOW lets talk about - Enhanced APIs and a New Architecture:
 
-```python
-    def _is_cloudflare_challenge(self):
-            """Check if current page is Cloudflare challenge."""
-            try:
-                title = self.sb.get_title().lower()
-                page_source = self.sb.get_page_source().lower()
-                
-                indicators = [
-                    'just a moment' in title,
-                    'cloudflare' in title,
-                    'verify you are human' in page_source,
-                    'additional verification required' in page_source,
-                    'checking your browser' in page_source,
-                    'challenges.cloudflare.com' in page_source,
-                    'cf-turnstile' in page_source,
+Recently, Indeed enhanced its internal APIs and security, rendering the purely bypass-oriented approach unreliable for multi-page scraping. Unauthenticated sessions are now aggressively throttled and challenged, making consistent data extraction difficult and perhaps not worth the time.
+
+___This necessitated a fundamental indeed specific architectural shift.___ <br>
+* Instead of trying to defeat Cloudflare from a cold start on every run, the scraper now adopts a **cookie-first strategy**. <br>
+It leverages the authentication and trust of a real, logged-in user session. <br>
+While SeleniumBase UC Mode is still used to reduce automation fingerprints, the primary guarantee of access now comes from reusing a valid browser session's cookies.<br>
+
+And while I was at it, I also added **Dice** and **Glassdoor** scrapers, each with its own architecture.<br> 
+I don't personally favor either board, but since they still allow unauthenticated searches, they serve as handy cross-data references:
+
+---
+
+## Architecture and Designs:
+
+* This project now contains three distinct scrapers: <br>
+    - All built upon the **SeleniumBase UC Mode** framework
+    - but adapted to the specific security and structural nuances of each job board:
+
+___For example:___ 
+
+| Scraper | Source | Authentication | Key Architectural Feature |
+|---|---|---|---|
+| **Indeed** | [indeed.com](https://www.indeed.com) | **Cookies Required** | **Cookie-First Strategy**: Reuses an authenticated sessions to bypass multi-page protection: |
+| **Dice** | [dice.com](https://www.dice.com/jobs) | None | **Two-Phase Model**: Stateless initial search followed by an optional job details: |
+| **Glassdoor** | [glassdoor.com](https://www.glassdoor.com) | None | **Scroll-Based & JS Extraction**: Handles and extracts data with in-page JavaScript for resilience: |
+
+___
+* Indeed Scraper **Module:** - [scraper_indeed.py](/modules/scraper_indeed.py)
+    - **Design:** - Use cookie-first strategy is central at this point: 
+    - Scraper assumes an already-authenticated session, with cookie collection handled by [get_cookies.py](/modules/get_cookies.py) module: <br>
+        This helps scraping logic itself cleaner and more reliable. <br> 
+        Jobs are normalized into a consistent .json artifact for downstream processing: <br>
+    - **Requirements:** 
+        - Cookies are mandatory for multi-page scraping:
+        - To get cookies: 
+            - Option 1: - run [main.py](/src/main.py) once which calls [get_cookies.py](/modules/get_cookies.py) if none found:<br>
+                - It'll log in and generate the ___indeed_cookies.pkl___ file which lasts approximately 30 days:
+                    ```bash
+                        python src/main.py
+                    ```
+            - Option 2: call [/modules/get_cookies.py](/modules/get_cookies.py) directly:<br>
+                - same deal - Follow the prompt - It'll log in and generate the ___indeed_cookies.pkl___ file which lasts approximately 30 days:
+                    ```bash
+                        python modules/get_cookies.py
+                    ```
+            - ![cookies](/docs/png_repo_screenshots/updates/indeed_cookies_prereqs.png)
+            - ![cookies](/docs/png_repo_screenshots/updates/cookies_age.png)
+---
+* Dice Scraper - **Module:** - [scraper_dice.py](/modules/scraper_dice.py)<br>
+    - **Design:** - This scraper is stateless by design since Dice does not require a login for the level of detail or targeted context: 
+        - THis one is a two phase model: 
+            - Phase 1 -  quick lookup - gathers all job listings from the search results pages (handling lazy-loading and pagination): 
+            - Phase 2 - ( _optional_ ) - visits each job link url to extract a full description and JD requiered skills if available:<br> 
+            .. helps to keep the default run fast plus reduces the risk of rate limiting wall:
+            - ___.json___ output _Dice_ data structure: 
+    
+                ```json
+                    {
+                    "metadata": {
+                        "source": "Dice.com",
+                        "total_jobs": 25,
+                        "scraped_at": "...",
+                        "pages_scraped": 2,
+                        "detailed_scraping_enabled": true,
+                        "search_params": { "query": "...", "location": "..." }
+                    },
+                    "jobs": [
+                        {
+                        "query": "...",
+                        "location": "...",
+                        "title": "...",
+                        "company": "...",
+                        "job_location": "...",
+                        "salary": "...",
+                        "url": "...",
+                        "job_id": "...",
+                        "job_details": {
+                            "skills": ["Python", "AWS", ...],
+                            "full_description": "...",
+                            "page_title": "..."
+                        },
+                        "detailed_scraped": true
+                        }
+                    ]
+                    }
+                ```
+
+---
+* Glassdoor Scraper - **Module:** [scraper_glassdoor.py](/modules/scraper_glassdoor.py)
+    - **Design:** - Glassdoor scraper operates without authentication using a single-page, infinite-scroll model: <br>
+        - To handle frequent HTML changes, it injects and executes a JavaScript snippet that walks the page's DOM to extract job data. 
+        - ...help the scraper to adapt to minor frontend updates:
+        - ___.json___ output _Indeed & Glassdoor_ data structure:<br>
+            ```json 
+                {
+                "metadata": {
+                    "total_jobs": 25,
+                    "scraped_at": "...",
+                    "scraped_at_readable": "...",
+                    "search_params": { "query": "...", "location": "..." }
+                },
+                "jobs": [
+                    {
+                    "title": "...",
+                    "company": "...",
+                    "location": "...",
+                    "salary": "...",
+                    "url": "...",
+                    "job_id": "...",
+                    "posted_date": "...",
+                    "job_type": "...",
+                    "description": "..."
+                    }
                 ]
-                
-                return any(indicators)
-            except:
-                return False
-```
+                }
+                ```
 
-- **Pros:** The only method that reliably solved the Cloudflare challenge on pagination.
-- **Cons:** Requires the browser window to be visible for the mouse click to work, so no headless calls.
-
-### 2. Playwright:
-* Modern fast browser automation library from Microsoft - originally comes from _Puppeteer_ by Google / Chrome DevTools team.  
-* Automation ( e.g SDET) and Devs like to use this one, primerly due to its support and clean APIs:
-
-* **How does it in code:** - [playwright_scraper.py](/modules/playwright_scraper.py) start the browser and apply stealth settings:
-
-```python
-def _start_browser(self):
-        """Start Playwright browser with anti-detection."""
-        print("[*] Starting Playwright browser...")
-        self.playwright = sync_playwright().start()
-        
-        # Browser launch options
-        launch_options = {
-            'headless': self.headless,
-            'args': [
-                '--disable-blink-features=AutomationControlled',
-                '--disable-dev-shm-usage',
-                '--no-sandbox',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process',
-            ]
-        }
-```
-
-* **Why it Did Not Work:** 
-    * Playwright is excellent for scraping unprotected sites:
-    * However, it was consistently blocked by Cloudflare when navigating to the second page: 
-    * I tried to replicate the _PyAutoGUI_ mouse-clicking logic, but it was not as reliable as SeleniumBase's tested implementation: 
-    * Cloudflare's fingerprinting is simply too advanced for the standard Playwright stealth plugins at this time: 
-
-- **Pros:** Fast, modern, great for general purpose scraping:
-- **Cons:** Fails against advanced bot detectors like Cloudflare's:
-
-### 3. Camoufox:
-* An anti-detect browser based on Firefox that promises to spoof your browser fingerprint to look like a different OS or browser:
-
-* **Why this one Failed** 
-    * Camoufox was a complete failure. It was plagued by bugs that made it unusable:
-        - 1.  **Version Mismatches:** - Python package and the browser binary it downloaded were out of sync, causing constant crashes:
-        - 2.  **Critical Rendering Bugs:** - It had a font-rendering issue that turned all web page text into garbled symbols:
-        - 3.  **Poor Maintenance:** - The tool did not properly clean up old files, making it difficult to debug or downgrade:
-
-- **Pros:** None. The concept is good, but the execution is flawed:
-- **Cons:** Unstable, buggy, and abandoned at this time:
-- see:
-    - [install_camoufox.sh](/maintance/install_camoufox.sh)
-    - [camoufox_cleanup.sh](/maintance/camoufox_cleanup.sh)
-
-### 4. Standard Selenium:
-
-* The original, classic browser automation tool:
-* **Why Ii always fails on sites liek Indeed** 
-* Standard Selenium is instantly detected. 
-* It sets a _`navigator.webdriver`_ flag in the browser to _`true`_, which is like wearing a sign that says "I AM A BOT": 
-* It is not a good option for any modern/protected website, hence why I dont like it and would not use it, but still had to try to be sure: 
 
 ---
 
-## Chapter 3: Proxies - Optional:
-* Even with the _"best"_ scraper, you still have one final vulnerability: your own **IP address**. 
-* If you send hundreds of requests from the same IP, Cloudflare will notice the unusual activity and block you:<br> This is where proxies come in:
+## Cross-Scraper Field Mapping:
 
-### What is a Proxy Server ?
-* Think of a proxy as a **middleman**. 
-* Instead of your scraper connecting directly to a web ( in this case) [indeed.com](https://www.indeed.com) 
-* it connects to a proxy server, which then forwards the request to Indeed.com on your behalf:
+For downstream tools (e.g. `job_apply_filters.py`) that consume all three:
 
->- **Standard or Typicall Connection:**
->   - `Your Computer --> Indeed.com`
->- **Proxy Connection:**
->   - `Your Computer --> Proxy Server --> Indeed.com`
+| Concept   | Indeed         | Dice         | Glassdoor    |
+|----------|----------------|--------------|--------------|
+| Query    | `search_query` | `query`      | `query`      |
+| Location | `location`     | `job_location` | `job_location` |
+| Job type | `job_type`     | `job_type`   | `job_type` (if extracted) |
 
-* To Indeed.com, it looks like the visitor is the Proxy Server since an actaul  IP address is hidden due to network redirects:
 
-## Types of Proxies & Why it Matters:
-* Not all proxies are created equal. The type of IP address the proxy server has is critical:
-* For Example:
-    - **Datacenter Proxies:** 
-        - These are IP addresses owned by cloud hosting providers such as _AWS_, _Google Cloud_, or _DigitalOcean_: 
-        - They are relativly cheap and plentiful, however, _Cloudflare_ knows these IP ranges and is highly suspicious of them. 
-        - **They are not effective for bypassing Cloudflare.**
-    - **Residential Proxies:** 
-        - These are IP addresses belonging to real home internet connections from ISPs like Comcast, AT&T or Verizon: 
-        - Since they look like a real users - they are trusted by Cloudflare.
-        - One can say that ISP based proxies are the **gold standard for scraping**:
 
-### How to Get and Use a Residential Proxy:
-* Normally there is no need to set up your own server - You simply subscribe to a service:
+## Init | How to:
 
-#### Possible Choices / Variants out there:
-1.  **Choose a Provider:** Sign up for a residential proxy provider. Here are some recommendations:
+Scraper's [main.py](/src/main.py) as the primary entry point can be run in interactive or automated mode:
 
-    | Provider | Approx. Cost (Pay-as-you-go) | Reason to select one: |
-    | :--- | :--- | :--- |
-    | [**IPRoyal**](https://iproyal.com/) | ~$7 / GB | Ok balance between the price and performance: |
-    | [**Bright Data**](https://brightdata.com/) | ~$15 / GB | Portraits itself as industry leader, reliable but more expensive:|
-    | [**Smartproxy**](https://www.smartproxy.org/) | ~$8.5 / GB | Another popular option:|
+**Interactive Mode:** - The script will prompt for the job board, search criteria, and other options:
+```bash
+python src/main.py
+```
+```bash
+python src/main.py -h
 
-2.  **Get Credentials:** 
-    * After signing up, go to your user dashboard. 
-    * The provider will give you a **proxy string** that contains your username, password, and the server address:
+usage: main.py [-h] [--auto] [--board {indeed,glassdoor,dice}] [--query QUERY] [--queries QUERIES]
+               [--location LOCATION] [--remote] [--min-salary MIN_SALARY] [--max-salary MAX_SALARY]
+               [--days {1,3,7,14}] [--max MAX] [--headless] [--incognito]
+               [--window-size WINDOW_SIZE] [--proxy PROXY] [--proxy-user PROXY_USER]
+               [--proxy-pass PROXY_PASS] [--output-dir OUTPUT_DIR] [--screenshots]
+               [--screenshots-dir SCREENSHOTS_DIR]
 
-3.  **Enter it into the Scraper:** 
-    * When you run the scraper, it will ask for this information ( _optional argument call_ ):
+Indeed Job Scraper - Cookie-Based Authentication with SeleniumBase UC Mode
 
-    ```
-      ~/DEV/indeed_scraper ❯ py src/main.py
-    ================================================================================
-    Indeed Job Scraper - Interactive Mode
-    ================================================================================
+options:
+  -h, --help                         show this help message and exit
 
-    Scraper options:
-    1. SeleniumBase UC Mode (recommended - best for Cloudflare bypass)
-    2. Camoufox (experimental)
-    3. Playwright
-    4. Selenium
-    Choice (1/2/3/4, default=1): 1
+Operation Mode:
+  --auto                             Run in automated mode (no interactive prompts) (default: False)
 
-    Login? (y/n): n
-    Run in incognito mode? (y/n): y
+Search Parameters:
+  --board {indeed,glassdoor,dice}    Job board to scrape (indeed, glassdoor, or dice) (default: indeed)
+  --query QUERY                      Job search query (e.g., "DevOps Engineer") (default: None)
+  --queries QUERIES                  Multiple queries comma-separated (e.g., "DevOps,SDET,SRE") (default: None)
+  --location LOCATION                Job location (default: Remote)
+  --remote                           Filter for remote jobs only (default: False)
 
-    Window size options:
-    1. Maximized (full screen)
-    2. Custom size (e.g., 1280x720)
-    Choice (1 or 2, default=1): 1
-    Capture screenshots? (y/n): y
-    Use proxy? (y/n): y
-    Proxy server (e.g., http://proxy.example.com:8080): 
-    ```
-    * Paste the **full proxy string** they gave you. 
-    * It will look something like this: _`http://<username>:<password>@<proxy_provider_address>:<port>`_
-        * **Real-world Example (for Bright Data):** _`http://brd-customer-hl_a1b2c3d4-zone-residential:z5y6x7w8v9@brd.superproxy.io:22225`_
+Filters:
+  --min-salary MIN_SALARY            Minimum salary (e.g., 150000) (default: None)
+  --max-salary MAX_SALARY            Maximum salary (e.g., 200000) (default: None)
+  --days {1,3,7,14}                  Posted within last N days (default: None)
+  --max MAX                          Maximum results per search (default: 25)
 
-And that should do it: The scraper will automatically route all its traffic through the residential proxy server:
+Browser Settings:
+  --headless                         Run browser in headless mode (no GUI) (default: False)
+  --incognito                        Run in incognito mode (fresh session, no saved cookies) (default: False)
+  --window-size WINDOW_SIZE          Window size: "maximized" or "WIDTHxHEIGHT" (e.g., "1280x720") (default: maximized)
+
+Proxy Settings:
+  --proxy PROXY                      Proxy server URL (e.g., "http://user:pass@proxy.example.com:8080") (default: None)
+  --proxy-user PROXY_USER            Proxy username (if not included in proxy URL) (default: None)
+  --proxy-pass PROXY_PASS            Proxy password (if not included in proxy URL) (default: None)
+
+Output Settings:
+  --output-dir OUTPUT_DIR            Output directory for JSON files (default: artifacts/json)
+  --screenshots                      Capture screenshots of pages and job cards (default: False)
+  --screenshots-dir SCREENSHOTS_DIR  Directory for screenshots (default: artifacts/screenshots)
+
+    ======================================================================================================
+                                *** CLI Examples Reference ***
+    ======================================================================================================
+
+    Interactive Mode - guided prompts:
+        python main.py
+
+    Basic Automated Search:
+        python main.py --auto --query "DevOps Engineer"
+        python main.py --auto --query "SDET" --location "Remote" --remote
+
+    With Filters:
+        python main.py --auto --query "Software Engineer" --location "Remote" --remote --min-salary 150000 --max-salary 200000 --days 7 --max 50
+
+    Multiple Queries:
+        python main.py --auto --queries "DevOps,SDET,SRE" --remote --days 7 --max 25
+
+    With Screenshots:
+        python main.py --auto --query "Backend Engineer" --remote --screenshots --max 25
+
+    Headless Mode (servers/cron):
+        python main.py --auto --query "Platform Engineer" --remote --headless --max 50
+
+    With Proxy:
+        python main.py --auto --query "Cloud Engineer" --proxy "http://user:pass@proxy.example.com:8080" --remote
+
+    Custom Output Directory:
+        python main.py --auto --query "DevOps" --output-dir "./results" --max 50
+
+    Full Example:
+        python main.py --auto --query "DevOps Engineer" --location "Remote" --remote --days 7 --max 50 --screenshots --output-dir "./artifacts/json"
+
+    ======================================================================================================
+
+```
+
+
+**Automated Mode (Examples):**
+```bash
+# ___ scrape Indeed for a remote DevOps Engineer role (requires cookies):
+python src/main.py --auto --board indeed --query "DevOps Engineer" --location "Remote" --remote
+
+# ___ scrape Glassdoor for 25 remote Software Engineer roles:
+python src/main.py --auto --board glassdoor --query "Software Engineer" --remote --max 25
+
+# ___ scrape Indeed for multiple queries with screenshots enabled:
+python src/main.py --auto --board indeed --queries "SDET,SRE" --remote --screenshots --max 50
+```
+
+### CLI Reference:
+
+| Argument | Description | Example |
+|---|---|---|
+| `--auto` | Run in automated mode without prompts. | `--auto` |
+| `--board` | Specify the job board: `indeed`, `glassdoor`. | `--board glassdoor` |
+| `--query` | A single job search query. | `--query "DevOps"` |
+| `--queries` | A comma-separated list of multiple queries. | `--queries "DevOps,SDET,SRE"` |
+| `--location` | Search location (defaults to "Remote"). | `--location "New York"` |
+| `--remote` | Apply the remote-only filter. | `--remote` |
+| `--max` | Maximum number of results per query (default 25). | `--max 50` |
+| `--headless` | Run the browser in headless mode. | `--headless` |
+| `--screenshots` | Capture screenshots during the process. | `--screenshots` |
+| `--proxy` | Use a proxy server for requests. | `--proxy "http://user:pass@host:8080"` |
 
 ---
-## Chapter 4: Final Recommendation:
 
-* After extensive testing, it’s clear that reliable, long term scraping of Indeed.com is achievable, but remains subject to continuous platform changes. <br>For this reason, I’ve intentionally retained all four scraping options in the project to preserve flexibility as conditions evolve.
+## Technical Considerations:
+### Proxies:
 
-### **Step 1: Use the SeleniumBase Scraper**
-- This is currently the only backend that consistently succeeds against Indeed’s interactive Cloudflare challenges, largely due to its real mouse and keyboard interaction model:
-- See -> [Demo](https://www.youtube.com/watch?v=2uSVOocKWGs):
+* For casual use, your local IP address is sufficient:<br> 
+However, for sustained or high-volume scraping, Cloudflare will eventually notice and block your IP:<br> 
+To avoid this, you can use a **residential proxy**, which routes your traffic through an IP address belonging to a real home internet connection, making your requests appear authentic.
+
+- **Recommendation:** Services like **IPRoyal**, **Bright Data**, or **Smartproxy** offer residential proxies:
+- **Usage:** Simply pass your proxy string via the `--proxy` argument.
 
 ```bash
-# --> auto mode SeleniumBase call:
-python src/main.py --auto --scraper seleniumbase --query "Software Engineer"
-python src/main.py --auto --scraper seleniumbase --query "DevOps Engineer"
+python src/main.py --auto --proxy "http://user:pass@proxy.example.com:8080" --query "Search Name"
 ```
 
-```bash
-# --> auto mode SeleniumBase call - real example:
-py src/main.py --auto --scraper seleniumbase --query "Software Engineer"
-================================================================================
-Indeed Job Scraper - Automated Mode
-================================================================================
-Started: January 19, 2026 at 07:16 PM
-[*] Using SeleniumBase UC Mode
-[*] Starting SeleniumBase UC Mode browser...
-[+] SeleniumBase UC Mode browser started
-
-================================================================================
-Searching: Software Engineer
-================================================================================
-
-[*] Page 1: https://www.indeed.com/jobs?q=Software+Engineer&l=Remote
-[*] Found 16 job cards
-  [1] Software Engineer-Entry Level | https://www.indeed.com/viewjob?jk=e270ee0b848896c1
-  [2] Software Engineer Level 1 | https://www.indeed.com/viewjob?jk=b5fd5ce235d453a0
-  [3] Software Engineer (entry) | https://www.indeed.com/viewjob?jk=2292b5587382bf2f
-  [4] Associate AI Software Engineer | https://www.indeed.com/viewjob?jk=1ac2ae991a3a1bf9
-  [5] Software Engineer | https://www.indeed.com/viewjob?jk=04349ef92dd67603
-  [6] Software Engineer | https://www.indeed.com/viewjob?jk=fedcba9876543210
-  [7] Full-Stack Software Engineer | https://www.indeed.com/viewjob?jk=89f452a2cb15092b
-  [8] Software Engineer, Frontend | https://www.indeed.com/viewjob?jk=4afd31e7fd195c88
-  [9] Mid-Level Software Engineer | https://www.indeed.com/viewjob?jk=ecb78dba239ff4ae
-  [10] Software Engineer - Production Support | https://www.indeed.com/viewjob?jk=331c25f90952cdd1
-  [11] Software Engineer | https://www.indeed.com/viewjob?jk=d9441771c89a6db0
-  [12] Software Engineer | https://www.indeed.com/viewjob?jk=60be1bc3c74e1b1a
-  [13] Software Engineer | https://www.indeed.com/viewjob?jk=5becccf92540cc6a
-  [14] Software Engineer | https://www.indeed.com/viewjob?jk=43184a1b34556735
-  [15] Software Engineer | https://www.indeed.com/viewjob?jk=94c839990fa22ffd
-  [16] Junior Software Engineer | https://www.indeed.com/viewjob?jk=797a5f4737568318
-[*] Reconnecting before next page...
-
-[*] Page 2: https://www.indeed.com/jobs?q=Software+Engineer&l=Remote&start=10
-[*] Found 16 job cards
-  [17] Junior Application Developer | https://www.indeed.com/viewjob?jk=e31c1b1b4ed2dd1a
-  [18] Fullstack Software Engineer | https://www.indeed.com/viewjob?jk=18f69febed88dff3
-  [19] Applied Software Engineer II | https://www.indeed.com/viewjob?jk=3913de0060f17e8e
-  [20] Software Engineer | https://www.indeed.com/viewjob?jk=27b1c182c0c5b609
-  [21] Python & JavaScript Web Scraper | https://www.indeed.com/viewjob?jk=a4402c63b9bd77a6
-  [22] Senior Software Engineer | https://www.indeed.com/viewjob?jk=38363ed6da841130
-  [23] Unity Software Engineer | https://www.indeed.com/viewjob?jk=c98fa7907955475a
-  [24] Frontend Software Engineer 2 | https://www.indeed.com/viewjob?jk=0e5c1a7785091c2a
-  [25] Frontend Software Engineer 2 | https://www.indeed.com/viewjob?jk=890abcdef0123456
-[+] Found 25 jobs for 'Software Engineer'
-
-✓ Saved 25 jobs to: /Users/vtool/DEV/indeed_scraper/artifacts/json/software_engineer_20260119_191646.json
-
-================================================================================
-Summary
-================================================================================
-Total queries: 1
-Total jobs scraped: 25
-Started: January 19, 2026 at 07:16 PM
-Completed: January 19, 2026 at 07:16 PM
-Duration: 0m 34s
-[*] SeleniumBase browser closed
-
-[+] Browser closed
-```
-### **Step 2: Use a Residential Proxy** (when applicable):
-- Optional for casual or personal use:
-- Recommended for sustained or higher-volume use cases, where avoiding IP-based blocking becomes essential:
-- This typically requires a third-party provider such as _IPRoyal_, _Smartproxy_, _Bright Data_, or another comparable service available at the time of writing:
-
-```python
-# --> auto mode with a residential proxy call:
-python src/main.py --auto --scraper seleniumbase --proxy "http://user:pass@proxy.example.com:8080" --query "The Ruler of Emojis"
-```
-
-#### Combining _**SeleniumBase UC Mode**_ automation with the anonymity of a _**residential proxy**_, <br> You can create a scraper that is both resilient and difficult to detect,<br> Capable of achieving consistent or at least _repeatable results_ against one of the web’s more aggressive anti-bot systems:
-
-![runtime](/docs/png_repo_screenshots/runtime.png)
-
-### P.S: <br> ... lets talk about containerizing this thing: 
-- *Docker containers are intentionally not covered here when it comes to network settigns and use of proxies*: 
-- *While useful in many contexts, containerizing this setup increases resource overhead (notably GPU usage) and still relies on the local host’s ISP and network characteristics:*
-- *Which offers limited benefit for this particular use case, HOWEVER:*
-- *if you are anything like Me a __Docker Freak__  and like to put everything in container as oppose to some __python venv__ and such, <br> go ahead and try [Scraper_Docker_Setup.md](/docs/Scraper_Docker_Setup.md) which has everything you need for indeed scraper container support:* 
----
-
-# Thank you !
----
-
-
-## ... almost forgot to mention:
+## Chromium's SSD Cache Bug:
 ### Running this setup will cause SSD space consumption due to Chromium Bug:
 ### I had to find it the hard way ...  
 ```bash
@@ -400,8 +339,54 @@ python src/main.py --auto --scraper seleniumbase --proxy "http://user:pass@proxy
     0B	/System/Volumes/Data/cores
 ```
 
-* and if this is a Chromim bug, this [chrome_cache_cleanup.sh](/maintance/chrome_cache_cleanup.sh) shell script should help: 
+* and if this is a Chromim bug - this [chrome_cache_cleanup.sh](/maintance/chrome_cache_cleanup.sh) shell script should help: 
+---
+
+## Post-Scraping - Filtering and Viewing Jobs:
+
+* All scraped jobs kept in .josn files in the _artifacts/json/_ path. <br>
+    - Optional -  [job_apply_filters.py](/src/job_apply_filters.py) script helps to filter and view scraped results:
+    - Works with the output from all three scrapers -  they share a normalized data schema:
+
+```bash
+# ____ preview filtered jobs in the console:
+python src/job_apply_filters.py --read-only
+```
+
+```bash
+# ___ filter by pay rate and open results in Firefox:
+python src/job_apply_filters.py --payrate --brwsr firefox
+```
+
+```bash
+# ___filter by job type:
+python src/job_apply_filters.py --type "Part-time"
+```
+
+```bash
+python src/job_apply_filters.py -h
+usage: job_apply_filters.py [-h] [--brwsr {firefox,os}] [--read-only] [--payrate] [--type {Full-time,Part-time,Contract,Remote}]
+
+Collected Job Applications & Filters:
+
+options:
+  -h, --help            show this help message and exit
+  --brwsr {firefox,os}
+  --read-only           no browser, just terminal stdout
+  --payrate             do not show jobs without salary in J.D
+  --type {Full-time,Part-time,Contract,Remote}
+                        filter for job terms (e.g Part / Full Time, Contract or Remote)
+```
 
 ---
 
-# Good Luck and as alwasy - make it better ;0)
+### P.S: <br> ... lets talk about containerizing this thing: 
+- *Docker containers are intentionally not covered here when it comes to network settigns and use of proxies*: 
+- *While useful in many contexts, containerizing this setup increases resource overhead (notably GPU usage) and still relies on the local host’s ISP and network characteristics:*
+- *Which offers limited benefit for this particular use case, HOWEVER:*
+- *if you are anything like Me a __Docker Freak__  and like to put everything in container as oppose to some __python venv__ and such, <br> 
+go ahead and try [Scraper_Docker_Setup.md](/docs/Scraper_Docker_Setup.md) which has everything you need for indeed scraper container support:* 
+- see [build_logic.md](/docs/build_logic.md) for dev architectural info: 
+---
+
+# Thank you !

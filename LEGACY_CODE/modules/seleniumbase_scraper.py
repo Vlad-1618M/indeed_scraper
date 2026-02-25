@@ -14,6 +14,7 @@ Key features:
 
 import re
 import time
+import pickle
 import random
 from pathlib import Path
 from datetime import datetime
@@ -24,34 +25,29 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 
 class SeleniumBaseIndeedScraper:
-    """
-    Indeed scraper using SeleniumBase UC Mode for Cloudflare bypass.
+    """ Indeed scraper using SeleniumBase UC Mode for Cloudflare bypass:
+        UC Mode advantages over regular Selenium:
+        - Patches ChromeDriver at runtime to avoid detection
+        - Removes automation flags that Cloudflare checks
+        - uc_gui_click_captcha() can solve Turnstile challenges
+        - reconnect() helps evade detection after suspicious actions:"""
     
-    UC Mode advantages over regular Selenium:
-    - Patches ChromeDriver at runtime to avoid detection
-    - Removes automation flags that Cloudflare checks
-    - uc_gui_click_captcha() can solve Turnstile challenges
-    - reconnect() helps evade detection after suspicious actions
-    """
-    
-    def __init__(self, headless=False, incognito=False, window_size="maximized", 
-                 proxy=None, screenshots=False, artifacts_dir=None):
-        """
-        Initialize SeleniumBase scraper in UC Mode.
+    def __init__(self, headless=False, incognito=False, window_size="maximized", proxy=None, screenshots=False, artifacts_dir=None, cookie_file=None):
+        """ Initialize SeleniumBase scraper in UC Mode:
+            Args:
+                headless (bool): Run headless (uses xvfb on Linux)
+                incognito (bool): Use incognito mode
+                window_size (str): "maximized" or "WIDTHxHEIGHT"
+                proxy (dict): Proxy config {'server': '...', 'username': '...', 'password': '...'}
+                screenshots (bool): Enable screenshot capture for each job
+                artifacts_dir (Path): Base artifacts directory: """
         
-        Args:
-            headless (bool): Run headless (uses xvfb on Linux)
-            incognito (bool): Use incognito mode
-            window_size (str): "maximized" or "WIDTHxHEIGHT"
-            proxy (dict): Proxy config {'server': '...', 'username': '...', 'password': '...'}
-            screenshots (bool): Enable screenshot capture for each job
-            artifacts_dir (Path): Base artifacts directory
-        """
         self.headless = headless
         self.incognito = incognito
         self.window_size = window_size
         self.proxy = proxy
         self.screenshots = screenshots
+        self.cookie_file = cookie_file
         self.sb = None
         self.driver = None
         
@@ -72,6 +68,10 @@ class SeleniumBaseIndeedScraper:
             print(f"[*] Card screenshots: {self.cards_dir}")
         
         self._start_browser()
+        
+        # Load cookies if provided
+        if self.cookie_file:
+            self._load_cookies_from_file()
     
     def __enter__(self):
         return self
@@ -124,6 +124,62 @@ class SeleniumBaseIndeedScraper:
                 self.sb.maximize_window()
         
         print("[+] SeleniumBase UC Mode browser started")
+    
+    def _load_cookies_from_file(self):
+        """Load cookies from file to bypass login."""
+        cookie_path = Path(self.cookie_file)
+        
+        if not cookie_path.exists():
+            print(f"[!] Cookie file not found: {cookie_path}")
+            print("[!] You need to run cookie setup first:")
+            print("    python3 get_cookies.py --auto")
+            return False
+        
+        print(f"[*] Loading cookies from: {cookie_path}")
+        
+        # Visit Indeed first
+        self.sb.uc_open_with_reconnect("https://www.indeed.com", reconnect_time=3)
+        time.sleep(2)
+        
+        # Load cookies
+        with open(cookie_path, 'rb') as f:
+            cookies = pickle.load(f)
+        
+        print(f"[*] Adding {len(cookies)} cookies...")
+        
+        # Add cookies
+        added = 0
+        for cookie in cookies:
+            try:
+                if 'expiry' in cookie:
+                    cookie['expiry'] = int(cookie['expiry'])
+                cookie.pop('sameSite', None)
+                self.driver.add_cookie(cookie)
+                added += 1
+            except:
+                pass
+        
+        print(f"[+] Added {added}/{len(cookies)} cookies")
+        
+        # Refresh to apply
+        self.sb.refresh()
+        time.sleep(2)
+        
+        # Verify login
+        if self._is_logged_in():
+            print("[+] Successfully logged in via cookies!")
+            return True
+        else:
+            print("[!] Cookies may be expired - please refresh them")
+            return False
+    
+    def _is_logged_in(self):
+        """Check if logged in."""
+        try:
+            page_source = self.sb.get_page_source().lower()
+            return 'sign out' in page_source or ('account' in page_source and 'auth' not in self.sb.get_current_url())
+        except:
+            return False
     
     def login(self, email, password):
         """

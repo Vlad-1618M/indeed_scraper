@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-""" File Utilities Module:
-    Handles file operations for saving artifacts: """
+""" File Utilities Module - File operations for saving artifacts """
 
 import json
 from pathlib import Path
@@ -11,69 +10,121 @@ from datetime import datetime
 
 def format_timestamp(dt=None):
     """ Format timestamp in human-readable format:
-        Args:
-            dt (datetime): Datetime object (default: now)
-        Returns:
-            str: Human-readable timestamp: """
+        Args: dt (datetime): <-- Datetime object (default: now)
+        Returns: str:        <-- Human-readable timestamp: """
+    
     if dt is None:
         dt = datetime.now()
-    
     return dt.strftime("%B %d, %Y at %I:%M %p")
 
 
 def format_filename_timestamp(dt=None):
     """ Format timestamp for filenames:
-        Args:
-            dt (datetime): Datetime object (default: now)
-        Returns:
-            str: Filename-safe timestamp:"""
+        Args: dt (datetime): <-- Datetime object (default: now)
+        Returns: str:        <-- Filename-safe timestamp:"""
+    
     if dt is None:
         dt = datetime.now()
-    
     return dt.strftime("%Y%m%d_%H%M%S")
 
 
-def save_jobs_json(jobs, filename, output_dir="artifacts/json"):
-    """ Save jobs to JSON file with metadata:
+def save_jobs_json(jobs, filename, output_dir="artifacts/json", jb_board=None):
+    """ Save jobs to .json file plus metadata:
         Args:
             jobs (list):        <-- List of job dictionaries
             filename (str):     <-- Base filename (without extension or timestamp)
             output_dir (str):   <-- Output directory path
-        Returns:
-            Path: Path to saved file, or None if no jobs: """
+        Returns:                <-- Path: Path to saved file, or None if no jobs: """
     if not jobs:
         print("No jobs to save")
         return None
     
-    # ___ Ensure output directory exists:
+    # ___  output directory exists check:
     output_path = Path(__file__).parent.parent / output_dir
     output_path.mkdir(parents=True, exist_ok=True)
     
-    # ___ Create filename with timestamp:
     timestamp = format_filename_timestamp()
-    filepath = output_path / f"{filename}_{timestamp}.json"
-    
-    # ___ Prepare output with metadata:
     now = datetime.now()
-    output = {
-        'metadata': {
-            'total_jobs': len(jobs),
-            'scraped_at': now.isoformat(),
-            'scraped_at_readable': format_timestamp(now),
-            'search_params': {
-                'query': jobs[0].get('search_query', 'N/A') if jobs else 'N/A',
-                'location': jobs[0].get('search_location', 'N/A') if jobs else 'N/A',
-            }
-        },
-        'jobs': jobs
-    }
+
+    if jb_board == "dice":
+        filepath = output_path / f"dice_data_{filename}_{timestamp}.json"
+        output = {
+            'metadata': {
+                'source': 'Dice.com',
+                'total_jobs': len(jobs),
+                'scraped_at': now.isoformat(),
+                'scraped_at_readable': format_timestamp(now),
+                'search_params': {
+                    'query': jobs[0].get('query', 'N/A') if jobs else 'N/A',
+                    'location': jobs[0].get('location', 'N/A') if jobs else 'N/A',
+                },
+                'pages_scraped': max([job.get('page', 1) for job in jobs]) if jobs else 1,
+                'detailed_scraping_enabled': any(job.get('detailed_scraped', False) for job in jobs)
+            },
+            'jobs': jobs
+        }
+    else:
+        filepath = output_path / f"{filename}_{timestamp}.json"
+        output = {
+            'metadata': {
+                'total_jobs': len(jobs),
+                'scraped_at': now.isoformat(),
+                'scraped_at_readable': format_timestamp(now),
+                'search_params': {
+                    'query': (jobs[0].get('search_query') or jobs[0].get('query', 'N/A')) if jobs else 'N/A',
+                    'location': (jobs[0].get('search_location') or jobs[0].get('location', 'N/A')) if jobs else 'N/A',
+                }
+            },
+            'jobs': jobs
+        }
     
-    # ___ Write to file:
+    # ___ write to file:
     with open(filepath, 'w', encoding='utf-8') as f:
         json.dump(output, f, indent=2, ensure_ascii=False)
     
     print(f"\n✓ Saved {len(jobs)} jobs to: {filepath}")
     return filepath
+
+# def save_jobs_json(jobs, filename, output_dir="artifacts/json"):
+#     """ Save jobs to .json file plus metadata:
+#         Args:
+#             jobs (list):        <-- List of job dictionaries
+#             filename (str):     <-- Base filename (without extension or timestamp)
+#             output_dir (str):   <-- Output directory path
+#         Returns:                <-- Path: Path to saved file, or None if no jobs: """
+#     if not jobs:
+#         print("No jobs to save")
+#         return None
+    
+#     # ___  output directory exists check:
+#     output_path = Path(__file__).parent.parent / output_dir
+#     output_path.mkdir(parents=True, exist_ok=True)
+    
+#     # ___ touch filename with timestamp:
+#     timestamp = format_filename_timestamp()
+#     filepath = output_path / f"{filename}_{timestamp}.json"
+    
+#     # ___ metadata output map:
+#     now = datetime.now()
+#     output = {
+#         'metadata': {
+#             'total_jobs': len(jobs),
+#             'scraped_at': now.isoformat(),
+#             'scraped_at_readable': format_timestamp(now),
+#             'search_params': {
+#                 'query': jobs[0].get('search_query', 'N/A') if jobs else 'N/A',
+#                 'location': jobs[0].get('search_location', 'N/A') if jobs else 'N/A',
+#             }
+#         },
+#         'jobs': jobs
+#     }
+    
+#     # ___ write to file:
+#     with open(filepath, 'w', encoding='utf-8') as f:
+#         json.dump(output, f, indent=2, ensure_ascii=False)
+    
+#     print(f"\n✓ Saved {len(jobs)} jobs to: {filepath}")
+#     return filepath
 
 
 def save_log(message, log_type="info"):
@@ -95,9 +146,7 @@ def save_log(message, log_type="info"):
 
 def get_artifact_paths():
     """ Get paths to artifact directories:
-        Returns:
-            dict: Dictionary of artifact directory paths: """
-    
+        Returns: dict:  <-- Dictionary of artifact directory paths: """
     base_path = Path(__file__).parent.parent / "artifacts"
     return {
         'json': base_path / "json",
@@ -105,5 +154,9 @@ def get_artifact_paths():
         'logs': base_path / "logs"
     }
 
+
 if __name__ == "__main__":
     pass
+    # print(format_timestamp())
+    # print(format_filename_timestamp())
+    # print(get_artifact_paths())

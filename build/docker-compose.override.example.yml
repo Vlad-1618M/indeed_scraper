@@ -1,0 +1,35 @@
+# =============================================================================
+#   *** Cookie override for Indeed ***
+# =============================================================================
+# Copy to docker-compose.override.yml when you have Indeed cookies:
+#   cp build/docker-compose.override.example.yml docker-compose.override.yml
+#
+# Create cookies locally first: python modules/get_cookies.py --auto
+#
+# Note: Override REPLACES volumes per service, so we list all mounts.
+# =============================================================================
+
+services:
+  scraper-auto:
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../.env:/app/.env:ro
+      - ../indeed_cookies.pkl:/app/indeed_cookies.pkl:ro
+
+  scraper-interactive:
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../.env:/app/.env:ro
+      - ../indeed_cookies.pkl:/app/indeed_cookies.pkl:ro
+
+  scraper-scheduled:
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../.env:/app/.env:ro
+      - ../indeed_cookies.pkl:/app/indeed_cookies.pkl:ro
+
+  scraper-proxy:
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../.env:/app/.env:ro
+      - ../indeed_cookies.pkl:/app/indeed_cookies.pkl:ro

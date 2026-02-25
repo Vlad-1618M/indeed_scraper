@@ -1,14 +1,14 @@
 # =============================================================================
-#       *** Indeed Job Scraper - Docker Container ***
+#       *** Job Scraper - Docker Container ***
 # =============================================================================
 # Supports: ARM64 (Apple Silicon) + AMD64 (Intel/AMD)
-# Scrapers: SeleniumBase UC Mode, Playwright, Camoufox
+# Boards: Indeed, Dice, Glassdoor (all use SeleniumBase UC Mode)
 # =============================================================================
 
-FROM python:3.11-slim-bookworm
+FROM python:3.13-slim-bookworm
 
-LABEL maintainer="Indeed Scraper Project"
-LABEL description="Indeed job scraper with Cloudflare bypass capabilities"
+LABEL maintainer="Job Scraper Project"
+LABEL description="Multi-board job scraper (Indeed, Dice, Glassdoor) with SeleniumBase UC Mode"
 
 # =============================================================================
 #                       *** SYSTEM DEPENDENCIES ***
@@ -88,9 +88,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
-# ___ Install Playwright browsers | <-- Optional, for Playwright scraper:
-# ___ This will install the correct architecture automatically:
-RUN playwright install chromium --with-deps || true
+# ___ Install Playwright browsers | <-- Optional fallback, not used by default:
+RUN playwright install chromium --with-deps 2>/dev/null || true
 
 # =============================================================================
 #                       *** APPLICATION CODE ***
@@ -103,8 +102,8 @@ COPY src/ ./src/
 # ___ Copy docs if they exist | <-- use wildcard to avoid failure if missing:
 COPY doc[s]/ ./docs/
 
-# ___ Create artifacts directories:
-RUN mkdir -p artifacts/json artifacts/logs artifacts/screenshots/pages artifacts/screenshots/cards
+# ___ Create artifacts directories (Dice uses details/ for Phase 2 screenshots):
+RUN mkdir -p artifacts/json artifacts/logs artifacts/screenshots/pages artifacts/screenshots/cards artifacts/screenshots/details
 
 # =============================================================================
 #                   *** ENVIRONMENT CONFIGURATION ***
