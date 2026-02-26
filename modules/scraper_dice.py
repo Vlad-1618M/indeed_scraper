@@ -454,7 +454,7 @@ class DiceScraper:
                     except Exception:
                         pass
                 
-                # Extract details (targeted selectors to reduce noise)
+                # Extract details: skills with multiple selectors + fallback from description
                 script = """
                 (function() {
                     try {
@@ -462,13 +462,48 @@ class DiceScraper:
                             if (!text) return '';
                             return text.replace(/\\s+/g, ' ').trim();
                         }
+                        function unique(arr) {
+                            const seen = new Set();
+                            return arr.filter(s => {
+                                const k = s.toLowerCase();
+                                if (seen.has(k) || s.length < 2) return false;
+                                seen.add(k);
+                                return true;
+                            });
+                        }
+                        
+                        let skills = [];
+                        const selectors = [
+                            '[class*="skill"]', '[class*="tag"]', '[class*="badge"]', '[class*="chip"]', '[class*="pill"]',
+                            'button[class*="skill"]', 'span[class*="skill"]', 'a[class*="skill"]',
+                            '[data-testid*="skill"]', '[data-testid*="tag"]'
+                        ];
+                        for (const sel of selectors) {
+                            try {
+                                document.querySelectorAll(sel).forEach(el => {
+                                    const t = clean(el.textContent);
+                                    if (t.length >= 2 && t.length < 50 && !/^\\d+$/.test(t))
+                                        skills.push(t);
+                                });
+                            } catch (_) {}
+                        }
+                        skills = unique(skills).slice(0, 25);
+                        
+                        const fullText = document.body.textContent || '';
+                        const full_description = clean(fullText.substring(0, 3000));
+                        
+                        if (skills.length === 0 && full_description) {
+                            const skillsMatch = fullText.match(/(?:skills?|required|qualifications?|experience with)[:\\s]+([^.\\n]{10,500})/i);
+                            if (skillsMatch) {
+                                const block = skillsMatch[1].replace(/[,;|]|\\band\\b/gi, ',').split(',')
+                                    .map(s => clean(s)).filter(s => s.length >= 2 && s.length < 40);
+                                skills = unique(skills.concat(block)).slice(0, 25);
+                            }
+                        }
                         
                         return {
-                            skills: Array.from(document.querySelectorAll('[class*="skill"], [class*="tag"], button[class*="badge"]'))
-                                .map(el => clean(el.textContent))
-                                .filter(s => s.length > 0 && s.length < 50)
-                                .slice(0, 20),
-                            full_description: clean(document.body.textContent.substring(0, 3000)),
+                            skills: skills,
+                            full_description: full_description,
                             page_title: document.title
                         };
                     } catch (e) {
@@ -483,11 +518,8 @@ class DiceScraper:
                     job['job_details'] = details
                     job['detailed_scraped'] = True
                     detailed_count += 1
-                    details_stream = f"\tDetails:\t{len(details.get('skills', []))} skills, {len(details.get('full_description', ''))} chars)"
-                    logger.info(f"{details_stream:>10}")
-                    # logger.info(f"Detail:\t{len(details.get('skills', [])):>5} skills, {len(details.get('full_description', ''))} chars")
-                    # logger.info(f"Detail: {len(details.get('skills', [])):<7} skills, {len(details.get('full_description', ''))} chars")
-                
+                    details_stream = f"\t Details:\t{len(details.get('skills', []))} skills, {len(details.get('full_description', ''))} chars"
+                    logger.info(details_stream)
                 time.sleep(random.uniform(DEFAULT_DELAY_MIN, DEFAULT_DELAY_MAX))
                 
             except Exception as e:
@@ -509,18 +541,4 @@ class DiceScraper:
 
 if __name__ == "__main__":
     pass
-    # scraper = DiceScraper(headless=False, screenshots=True, artifacts_dir="artifacts")
-    # jobs = scraper.search_jobs("Python Developer", location="Remote", remote_only=True, max_results=10)
-    # jobs = scraper.scrape_job_details(jobs)
-    # print(jobs)
     
-    # details = "somedata to be shown"
-    # job = 
-    # job['job_details'] = details
-    # job['detailed_scraped'] = True
-    # detailed_count += 1
-    # logger.info(f"\t\tDetails:\t{len(details.get('skills', []))} skills, {len(details.get('full_description', ''))} chars)")
-    # logger.info(f"Detail:\t{len(details.get('skills', [])):>10} skills, {len(details.get('full_description', ''))} chars")
-    # logger.info(f"Detail: {len(details.get('skills', [])):<10} skills, {len(details.get('full_description', ''))} chars")
-
-
