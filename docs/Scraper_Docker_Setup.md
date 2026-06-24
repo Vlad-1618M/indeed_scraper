@@ -1,7 +1,16 @@
 
-# Containerized Job Scraper Setup (Indeed, Dice, Glassdoor)
+# Containerized Job Scraper Setup (Dice + reports in Docker)
 
 See [README.md](/README.md) for design notes and per-board details.
+
+> **Indeed is not supported in Docker.** Cloudflare and session checks need a real browser on the host. Run `./build/build.sh auto` for the full host redirect and command list.
+
+| Board | Docker | Host |
+|-------|--------|------|
+| Dice | Yes — `./build/build.sh all dice` | `bash maintance/run_dice_attach.sh` |
+| Reports / serve | Yes — `./build/build.sh reports` / `serve` | `generate_job_reports.py --serve` |
+| Glassdoor | Best-effort — prefer host attach | `bash maintance/run_glassdoor_attach.sh` |
+| Indeed | **No** — use host | `bash maintance/run_indeed_attach.sh` |
 
 ## Table of Contents:
 
@@ -27,21 +36,25 @@ See [README.md](/README.md) for design notes and per-board details.
 ---
 ## Environment Configuration:
 
-### Cookie Override for Indeed:
+### Indeed → run on host (not Docker)
 
-Indeed requires cookies. Create them on your host (needs a display for login):
-
-```bash
-python modules/get_cookies.py
-```
-
-Then enable the cookie mount for Docker:
+Indeed requires real Chrome and sometimes manual Cloudflare clicks. `./build/build.sh auto`, `proxy`, and `interactive` are **blocked in Docker** and print host commands instead.
 
 ```bash
-cp build/docker-compose.override.example.yml docker-compose.override.yml
+bash maintance/run_indeed_attach.sh
+python3 modules/get_cookies.py --auto
+python3 src/main.py --auto --board indeed --queries "DevOps Engineer,SDET" --remote --max 25
 ```
 
-Without this override, `scraper-auto` and `scraper-interactive` will fail with "NO COOKIES FOUND". Use `scraper-dice` or `scraper-glassdoor` for cookie-free runs.
+After host scrape, refresh reports (shared `artifacts/` folder):
+
+```bash
+./build/build.sh reports && ./build/build.sh serve
+```
+
+### Cookie override (host only — not for Docker Indeed scrape)
+
+The `docker-compose.override.yml` cookie mount is legacy; Indeed scraping in Docker is disabled. Use host attach above.
 
 ### Step 1: Create `.env` file
 

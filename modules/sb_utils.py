@@ -28,6 +28,27 @@ DEFAULT_BOARD_DEBUG_PORTS = {
     "glassdoor": 9223,
     "dice": 9224,
 }
+DOCKER_CHROMIUM_ARGS = "--no-sandbox,--disable-dev-shm-usage,--disable-gpu"
+
+
+def running_in_docker():
+    """True when executing inside a container (Docker/Kubernetes)."""
+    if Path("/.dockerenv").exists():
+        return True
+    return os.environ.get("RUNNING_IN_DOCKER", "").strip().lower() in ("1", "true", "yes")
+
+
+def _merge_chromium_arg(opts, extra):
+    """Append comma-separated Chromium flags to SeleniumBase chromium_arg."""
+    if not extra:
+        return
+    current = opts.get("chromium_arg") or ""
+    parts = [p.strip() for p in re.split(r",|\s+", current) if p.strip()]
+    for flag in extra.split(","):
+        flag = flag.strip()
+        if flag and flag not in parts:
+            parts.append(flag)
+    opts["chromium_arg"] = ",".join(parts)
 
 STEALTH_CDP_SCRIPT = """
 Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
@@ -202,6 +223,9 @@ def build_sb_options(headless=False, incognito=False, proxy=None, use_uc=False, 
             server = proxy_str.replace("http://", "").replace("https://", "")
             proxy_str = f"{auth}@{server}"
         opts["proxy"] = proxy_str
+
+    if running_in_docker():
+        _merge_chromium_arg(opts, DOCKER_CHROMIUM_ARGS)
 
     return opts
 
@@ -567,11 +591,14 @@ def board_profile_dir(board="indeed"):
 
 
 def use_scraper_uc():
-    raw = os.environ.get("SCRAPER_USE_UC", os.environ.get("INDEED_USE_UC", "0"))
+    default = "1" if running_in_docker() else "0"
+    raw = os.environ.get("SCRAPER_USE_UC", os.environ.get("INDEED_USE_UC", default))
     return raw.lower() in ("1", "true", "yes")
 
 
 def use_scraper_profile(board="indeed"):
+    if running_in_docker():
+        return False
     if use_board_attach(board) or use_scraper_uc():
         return False
     no_profile = os.environ.get("SCRAPER_NO_PROFILE", os.environ.get("INDEED_NO_PROFILE", "0"))
@@ -589,6 +616,8 @@ def _launch_profile_browser(board, *, headless, incognito, proxy, window_size, l
     if logger:
         logger.info("Starting browser...")
         logger.info("(First launch may take 30-60s while Chrome/driver initializes)")
+        if running_in_docker():
+            logger.info("Docker mode — UC browser, no persistent profile")
         if use_profile:
             logger.info(f"Using Chrome profile: {board_profile_dir(board)}")
             logger.info(

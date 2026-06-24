@@ -144,29 +144,22 @@ config/job_titles.ini            <-- Default queries for auto mode
 
 # Docker:
 
-Containerized scraping uses the same code paths and shares `artifacts/` with the host through a volume bind/mount:
+Containerized scraping shares `artifacts/` with the host. **Indeed is host-only** (Cloudflare needs real Chrome / manual clicks). Docker is best for **Dice scrape + reports + serve**.
 
-**See Full Guide/HowTO:** --> [docs/Scraper_Docker_Setup.md](docs/Scraper_Docker_Setup.md)
-
-```bash
-cd build
-./build.sh build
-./build.sh all                                 # scheduled scrape + reports + serve
-# or: ./build.sh all dice
-# → http://localhost:8765/
-```
-
-... or with compose directly:
+**Full guide:** [docs/Scraper_Docker_Setup.md](docs/Scraper_Docker_Setup.md)
 
 ```bash
-docker-compose -f build/docker-compose.yml build
-docker-compose -f build/docker-compose.yml run --rm scraper-dice
-docker-compose -f build/docker-compose.yml run --rm --no-deps report-server python3 modules/generate_job_reports.py --import-json
-docker-compose -f build/docker-compose.yml up -d report-server
+./build/build.sh build
+./build/build.sh all dice              # Dice + reports + serve → http://localhost:8765
+./build/build.sh auto                  # shows Indeed host redirect if you try Docker
 ```
 
-The `report-server` service binds _**0.0.0.0:8765**_ inside the container and publishes _**`localhost:8765`**_ on the host — same UX as `generate_job_reports.py --serve` locally<br>
-Indeed in Docker still needs `indeed_cookies.pkl` mounted (see `build/docker-compose.override.example.yml`).
+**Indeed on host** (then `./build/build.sh reports && ./build/build.sh serve`):
+
+```bash
+bash maintance/run_indeed_attach.sh
+python3 src/main.py --auto --board indeed --queries "DevOps,SDET" --remote --max 25
+```
 
 ---
 
@@ -189,6 +182,38 @@ Copy `.env.example` → `.env`. Key variables:
 bash maintance/chrome_cache_cleanup.sh -d    # trim Chrome profile cache
 python3 modules/generate_job_reports.py --prototypes   # UI theme experiments ( TBD )
 ```
+
+---
+
+---
+
+## CI / tests
+
+Merge CI runs on every PR (Python 3.13). **Two steps** — install deps with `pip`, run tests with `pytest`:
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+pytest tests/ -q \
+  --cov=modules.job_store \
+  --cov=modules.job_report_api \
+  --cov-fail-under=60
+```
+
+Or one command:
+
+```bash
+bash scripts/run_tests.sh
+```
+
+`--cov` is a **pytest** flag (via `pytest-cov` + `coverage` in `requirements-dev.txt`), not a `pip` option.
+
+| Job | When | What |
+|-----|------|------|
+| `python` | Always | pytest + 60% coverage on `job_store` + `job_report_api` |
+| `config` | Always | `bash -n build/build.sh`, `docker compose config` |
+| `docker-build` | PR touches `build/`, `modules/`, `src/`, `requirements*` | Image build + import smoke |
+
+No live scrapes in CI — board scraping is manual/host attach only.
 
 ---
 
