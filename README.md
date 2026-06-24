@@ -55,15 +55,31 @@ bash maintance/run_glassdoor_attach.sh
 bash maintance/run_dice_attach.sh
 ```
 
-**Indeed once (~30 days):** `python3 modules/get_cookies.py --auto` before first Indeed attach.
+**Indeed authentication (attach flow):**
+
+1. **Start:** real **Google Chrome** opens (not Selenium). Default on first run: log in there and pass Cloudflare once.
+2. **End:** optionally save `indeed_cookies.pkl` from that Chrome session for faster repeat runs.
+
+| When | What to pick |
+|------|----------------|
+| First run / Cloudflare trouble | Log in in warm Chrome (default) |
+| Regular scraping | Load saved `indeed_cookies.pkl` if you have one |
+
+Avoid `get_cookies.py --auto` before attach — it uses Selenium on the auth page and often loops Cloudflare. Export after attach instead:
+
+```bash
+python3 modules/get_cookies.py --from-warm 9222   # while warm Chrome still open
+```
+
+**Reports (at end of attach):** you are asked whether to start the report server and open **http://127.0.0.1:8765/** in your browser. Say yes for Jobs search, Apply/Skip, and live dashboard data.
 
 **All job titles from** `config/job_titles.ini`: run attach, then at prompts choose indices or type `all`.
 
-**Reports after scrape:** attach scripts can refresh HTML; or manually:
+**Reports without the attach prompt:**
 
 ```bash
+bash scripts/start_report_server.sh          # http://127.0.0.1:8765/
 python3 modules/generate_job_reports.py --import-json
-python3 modules/generate_job_reports.py --serve   # http://127.0.0.1:8765/
 ```
 
 ## 1 · Scrape (advanced — direct CLI)
@@ -88,6 +104,12 @@ python3 modules/generate_job_reports.py --variants index,dashboard,table,search,
 ```
 
 ## 3 · Serve (browser + API)
+
+```bash
+bash scripts/start_report_server.sh
+```
+
+Or directly:
 
 ```bash
 python3 modules/generate_job_reports.py --serve

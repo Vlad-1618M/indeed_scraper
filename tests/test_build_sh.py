@@ -26,6 +26,28 @@ def test_build_sh_syntax():
     assert result.returncode == 0, result.stderr
 
 
+def test_attach_common_bash_syntax():
+    result = subprocess.run(
+        ["bash", "-n", "maintance/lib/attach_common.sh"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_start_report_server_sh_exists_and_syntax():
+    path = ROOT / "scripts/start_report_server.sh"
+    assert path.is_file(), "scripts/start_report_server.sh must be tracked in git"
+    result = subprocess.run(
+        ["bash", "-n", str(path)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_attach_common_sh_exists():
     path = ROOT / "maintance/lib/attach_common.sh"
     assert path.is_file(), "maintance/lib/attach_common.sh must be in repo (not gitignored)"
