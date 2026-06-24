@@ -34,6 +34,7 @@ show_help() {
     printf "${yellow}OPTIONS:${off}\n"
     printf "    ${magenta}-h${off}, --help              Show this help message\n"
     printf "    ${magenta}-d${off}, --dry-run           Show what would be deleted without actually deleting\n"
+    printf "    ${magenta}-y${off}, --yes               Skip confirmation prompts (use with care)\n"
     printf "    ${magenta}-a${off}, --app APP           Target specific app (chrome, docker, all)\n"
     printf "    ${magenta}-l${off}, --log-dir PATH      Directory to save logs (default: ~/Library/Logs/cleanup_cache)\n\n"
     printf "${yellow}DESCRIPTION:${off}\n"
@@ -227,6 +228,7 @@ scan_other_caches() {
 # ____ confirm Chrome cleanup:
 confirm_chrome_cleanup() {
     local chrome_path="$1"
+    local auto_yes="${2:-false}"
     local confirm1
     local confirm2
     
@@ -241,6 +243,11 @@ confirm_chrome_cleanup() {
     echo -e "  - User profiles"
     echo -e "\n${yellow}Chrome must be closed before cleanup.${off}"
     decorator_done
+
+    if [ "$auto_yes" = "true" ]; then
+        log_action "Auto-confirmed Chrome cache deletion (--yes)"
+        return 0
+    fi
     
     # ____ first confirmation:
     read -p "$(echo -e ${cyan}Are you sure you want to proceed? ${white}[yes/no]:${off} )" confirm1
@@ -315,6 +322,7 @@ cleanup_chrome() {
 
 main() {
     local dry_run=false
+    local auto_yes=false
     local target_app="chrome"
     local temp_folder
     local chrome_path
@@ -328,6 +336,10 @@ main() {
                 ;;
             -d|--dry-run)
                 dry_run=true
+                shift
+                ;;
+            -y|--yes)
+                auto_yes=true
                 shift
                 ;;
               -a|--app)
@@ -389,7 +401,7 @@ main() {
             if [ "$dry_run" = "true" ]; then
                 cleanup_chrome "$chrome_path" "$dry_run"
             else
-                if confirm_chrome_cleanup "$chrome_path"; then
+                if confirm_chrome_cleanup "$chrome_path" "$auto_yes"; then
                     if cleanup_chrome "$chrome_path" "$dry_run"; then
                         cleanup_performed=true
                     fi

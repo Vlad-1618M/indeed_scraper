@@ -13,6 +13,10 @@
 #   ./build.sh glassdoor                # Glassdoor automated (no cookies)
 #   ./build.sh interactive              # Interactive mode (board selection)
 #   ./build.sh scheduled                # Multi-board scheduled scrape
+#   ./build.sh reports                  # Import JSON + rebuild HTML in container
+#   ./build.sh serve                    # Start report server (http://localhost:8765)
+#   ./build.sh all                      # scheduled + reports + serve (full pipeline)
+#   ./build.sh all dice                 # dice scrape + reports + serve
 #   ./build.sh shell                    # Open shell in container
 #   ./build.sh logs                     # View container logs
 #   ./build.sh clean                    # Remove containers and images
@@ -78,6 +82,7 @@ cmd_auto() {
         --auto --board indeed \
         --query "$query" --location "$location" --remote --days 7 --max "$max"
     log_success "Scrape completed. Check ./artifacts/json/ for results."
+    log_info "View reports: ./build.sh serve  →  http://localhost:${REPORT_PORT:-8765}"
 }
 
 # ___ Run Dice scrape (no cookies):
@@ -90,6 +95,7 @@ cmd_dice() {
         --auto --board dice \
         --query "$query" --location "$location" --remote --days 7 --max "$max"
     log_success "Scrape completed. Check ./artifacts/json/ for results."
+    log_info "View reports: ./build.sh serve  →  http://localhost:${REPORT_PORT:-8765}"
 }
 
 # ___ Run Glassdoor scrape (no cookies):
@@ -102,6 +108,7 @@ cmd_glassdoor() {
         --auto --board glassdoor \
         --query "$query" --location "$location" --remote --days 7 --max "$max"
     log_success "Scrape completed. Check ./artifacts/json/ for results."
+    log_info "View reports: ./build.sh serve  →  http://localhost:${REPORT_PORT:-8765}"
 }
 
 # ___ Run interactive mode:
@@ -115,6 +122,52 @@ cmd_scheduled() {
     log_info "Running scheduled multi-search..."
     docker-compose -f "$COMPOSE_FILE" run --rm scraper-scheduled
     log_success "Scheduled scrapes completed."
+    log_info "Import + view: ./build.sh reports && ./build.sh serve"
+}
+
+# ___ Import JSON and rebuild HTML reports (same as host generate_job_reports.py):
+cmd_reports() {
+    log_info "Importing JSON into SQLite and rebuilding HTML..."
+    docker-compose -f "$COMPOSE_FILE" run --rm --no-deps report-server \
+        python3 modules/generate_job_reports.py --import-json
+    log_success "Reports updated in ./artifacts/html/"
+    log_info "Start server: ./build.sh serve  →  http://localhost:${REPORT_PORT:-8765}"
+}
+
+# ___ Start FastAPI report server (background, port mapped to host):
+cmd_serve() {
+    log_info "Starting report server on http://localhost:${REPORT_PORT:-8765} ..."
+    docker-compose -f "$COMPOSE_FILE" up -d report-server
+    log_success "Report server running. Open http://localhost:${REPORT_PORT:-8765}/"
+    log_info "Stop with: docker-compose -f build/docker-compose.yml stop report-server"
+}
+
+# ___ Scrape + import/rebuild + serve (one command):
+cmd_all() {
+    local board="${1:-scheduled}"
+    shift || true
+
+    case "$board" in
+        scheduled)
+            cmd_scheduled
+            ;;
+        auto|indeed)
+            cmd_auto "$@"
+            ;;
+        dice)
+            cmd_dice "$@"
+            ;;
+        glassdoor)
+            cmd_glassdoor "$@"
+            ;;
+        *)
+            log_error "Unknown board '$board'. Use: scheduled, auto, dice, glassdoor"
+            exit 1
+            ;;
+    esac
+
+    cmd_reports
+    cmd_serve
 }
 
 # ___ Run with proxy:
@@ -168,6 +221,9 @@ cmd_help() {
     echo "  glassdoor [query] [loc] [max]  Glassdoor automated (no cookies)"
     echo "  interactive                    Interactive mode (board selection)"
     echo "  scheduled                      Multi-board scheduled scrape"
+    echo "  reports                        Import JSON + rebuild HTML (container)"
+    echo "  serve                          Start report server on localhost:8765"
+    echo "  all [board] [query] [loc] [max] Scrape + reports + serve (default: scheduled)"
     echo "  proxy                          Indeed with proxy (requires .env)"
     echo "  shell                          Open shell in container"
     echo "  logs                           View container logs"
@@ -179,6 +235,8 @@ cmd_help() {
     echo "  ./build.sh auto                              # Indeed (needs indeed_cookies.pkl)"
     echo "  ./build.sh dice 'Python Developer' Remote 50 # Dice, no cookies"
     echo "  ./build.sh glassdoor 'DevOps' Remote 25      # Glassdoor"
+    echo "  ./build.sh all                                 # scheduled + reports + serve"
+    echo "  ./build.sh all dice 'Python Developer' Remote 50"
     echo "  ./build.sh interactive"
     echo ""
     echo "Indeed cookies: Run 'python modules/get_cookies.py --auto' locally first."
@@ -195,6 +253,9 @@ case "${1:-help}" in
     glassdoor)   shift; cmd_glassdoor "$@" ;;
     interactive) cmd_interactive ;;
     scheduled)   cmd_scheduled ;;
+    reports)     cmd_reports ;;
+    serve)       cmd_serve ;;
+    all)         shift; cmd_all "$@" ;;
     proxy)       cmd_proxy ;;
     shell)       cmd_shell ;;
     logs)        cmd_logs ;;

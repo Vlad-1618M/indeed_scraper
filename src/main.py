@@ -5,6 +5,7 @@
     Cookie-based authentication with SeleniumBase UC Mode: """
 
 import sys
+import os
 import subprocess
 from pathlib import Path
 from datetime import datetime
@@ -15,6 +16,52 @@ from modules import ui
 from modules.args_parser import parse_args
 from modules import cookies_age as cookies
 from modules.file_utils import save_jobs_json, save_log
+
+
+def _env_flag(name):
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def _orchestrator_attach():
+    """True when run_scraper_attach.sh (or run_indeed_attach.sh) launched us."""
+    if not _env_flag("INDEED_ORCHESTRATOR"):
+        return False
+    from modules.sb_utils import use_board_attach
+
+    board = os.environ.get("SCRAPER_BOARD", "indeed").lower()
+    return use_board_attach(board)
+
+
+def _orchestrator_indeed_attach():
+    """Backward-compatible alias."""
+    return _orchestrator_attach() and os.environ.get("SCRAPER_BOARD", "indeed").lower() == "indeed"
+
+
+def _persist_jobs_to_db(jobs, board, json_source=None):
+    """Upsert scraped jobs into SQLite and print summary."""
+    import uuid
+    from modules.job_store import upsert_jobs
+
+    if not jobs:
+        return None
+    run_id = os.environ.get("INDEED_RUN_ID") or str(uuid.uuid4())
+    os.environ.setdefault("INDEED_RUN_ID", run_id)
+    stats = upsert_jobs(jobs, board=board, run_id=run_id, json_source=json_source)
+    print(
+        f"[DB] {stats['new']} new, {stats['updated']} updated, "
+        f"{stats['sightings']} sightings (run {run_id[:8]}…)"
+    )
+    return stats
+
+
+def _generate_html_reports():
+    from modules.job_report_html import generate_reports
+
+    written = generate_reports()
+    index = written.get("index")
+    if index:
+        print(f"[+] HTML reports: file://{index}")
+    return written
 
 
 def prompt_cookie_setup():
@@ -40,8 +87,13 @@ def prompt_cookie_setup():
         print("[*] Browser will open - login when prompted:\n", end="=" * 80 + "\n")
         
         try:
-            # __ get_cookies.py call:
-            result = subprocess.run([sys.executable, "modules/get_cookies.py", "--auto"], check=False)
+            project_root = Path(__file__).resolve().parent.parent
+            cookie_script = project_root / "modules" / "get_cookies.py"
+            result = subprocess.run(
+                [sys.executable, str(cookie_script), "--auto"],
+                cwd=project_root,
+                check=False,
+            )
             
             if result.returncode == 0:
                 print("\n" + "="*80)
@@ -138,78 +190,138 @@ def get_scraper(board="indeed", headless=False, incognito=False, window_size="ma
 
 def run_interactive_mode():
     """Run scraper in interactive mode with user prompts."""
-    ui.print_header("Indeed Job Scraper - Interactive Mode")
-    
-    # ___ job board selection FIRST to know if cookies needed:
-    job_board_selector = ui.job_board_portal()
-    
-    # ___ cookies check | show status (only for Indeed):
-    has_cookies = False
-    if job_board_selector == "indeed":
-        has_cookies = cookies.print_cookie_file_info()
-        
-        if has_cookies:
-            print("\tAuthenticated - no login needed!")
-        else:
-            if not prompt_cookie_setup():
-                print("\nCannot continue without authentication\n")
-                return
+    fast_path = _orchestrator_attach()
+    ui.print_header("Job Scraper - Interactive Mode")
+
+    if fast_path:
+        job_board_selector = os.environ.get("SCRAPER_BOARD", "indeed").lower()
+        if job_board_selector not in ("indeed", "glassdoor", "dice"):
+            job_board_selector = "indeed"
+        has_cookies = bool(cookies.cookie_info()) if job_board_selector == "indeed" else False
+        from modules.sb_utils import board_debug_port
+
+        board_names = {"indeed": "Indeed", "glassdoor": "Glassdoor", "dice": "Dice"}
+        print("\n" + "=" * 80)
+        print(f"{board_names.get(job_board_selector, job_board_selector.upper())} ATTACH (orchestrator)")
+        print("=" * 80)
+        print(
+            f"Board: {board_names.get(job_board_selector, job_board_selector)}  |  "
+            f"Debug port: {board_debug_port(job_board_selector)}  |  "
+            f"Real Chrome attach session"
+        )
+        print("Skipping board, cookie, and incognito prompts.")
+        print("=" * 80)
+    else:
+        # ___ job board selection FIRST to know if cookies needed:
+        job_board_selector = ui.job_board_portal()
+
+        # ___ cookies check | show status (only for Indeed):
+        has_cookies = False
+        if job_board_selector == "indeed":
             has_cookies = cookies.print_cookie_file_info()
-            if not has_cookies:
-                print("\n\tCookie setup failed - exiting")
-                return
-        
-        # ___ confirm cookies used for auth:
-        if has_cookies:
-            print("\n" + "="*80)
-            print("AUTHENTICATION: Using saved cookies:")
-            print("="*80)
-            print("Your saved login session will be used automatically:")
-            print("No email/password needed:")
-            print("="*80)
-    elif job_board_selector == "glassdoor":
-        print("\n" + "="*80)
-        print("GLASSDOOR: --> without cookies:")
-        print("="*80)
-        print("Attempting to scrape without authentication:")
-        print("Note: May be limited to ~10-20 jobs before login wall or next page:")
-        print("="*80)
-    elif job_board_selector == "dice":
-        print("\n" + "="*80)
-        print("DICE: --> without cookies:")
-        print("="*80)
-        print("Attempting to scrape without authentication:")
-        print("Note: Pagination support enabled - will scrape multiple pages:")
-        print("="*80)
+
+            if has_cookies:
+                print("\tAuthenticated - no login needed!")
+            else:
+                if not prompt_cookie_setup():
+                    print("\nCannot continue without authentication\n")
+                    return
+                has_cookies = cookies.print_cookie_file_info()
+                if not has_cookies:
+                    print("\n\tCookie setup failed - exiting")
+                    return
+
+            # ___ confirm cookies used for auth:
+            if has_cookies:
+                print("\n" + "=" * 80)
+                print("AUTHENTICATION: Using saved cookies:")
+                print("=" * 80)
+                print("Your saved login session will be used automatically:")
+                print("No email/password needed:")
+                print("=" * 80)
+
+            print("\n" + "=" * 80)
+            print("CLOUDFLARE: If verification loops or manual clicks fail:")
+            print("=" * 80)
+            print("  Terminal 1:  python modules/warm_indeed_profile.py")
+            print("               (pass Cloudflare in that Chrome — keep it OPEN)")
+            print("  Terminal 2:  python src/main.py")
+            print("The scraper attaches to your real Chrome instead of launching Selenium.")
+            print("=" * 80)
+        elif job_board_selector == "glassdoor":
+            from modules.sb_utils import board_debug_port
+
+            print("\n" + "=" * 80)
+            print("GLASSDOOR — no account required")
+            print("=" * 80)
+            print("If Cloudflare loops or attach fails:")
+            print(f"  Terminal 1:  python modules/warm_indeed_profile.py --board glassdoor")
+            print(f"               (debug port {board_debug_port('glassdoor')} — pass CF, keep Chrome OPEN)")
+            print("  Terminal 2:  python src/main.py")
+            print("Without warm Chrome, scraper uses profile: artifacts/chrome_profile_glassdoor")
+            print("Note: May be limited to ~10-20 jobs before login wall")
+            print("=" * 80)
+        elif job_board_selector == "dice":
+            from modules.sb_utils import board_debug_port
+
+            print("\n" + "=" * 80)
+            print("DICE — no account required")
+            print("=" * 80)
+            print("If Cloudflare loops or attach fails:")
+            print(f"  Terminal 1:  python modules/warm_indeed_profile.py --board dice")
+            print(f"               (debug port {board_debug_port('dice')} — pass CF, keep Chrome OPEN)")
+            print("  Terminal 2:  python src/main.py")
+            print("Without warm Chrome, scraper uses profile: artifacts/chrome_profile_dice")
+            print("=" * 80)
+    
+    # ___ job title selection from config (after board chosen):
+    search_queries = ui.prompt_job_titles(board=job_board_selector)
     
     # ___ browser configuration:
-    use_incognito = input("\nRun in incognito mode? (y/n): ").lower() == 'y'
-    
-    print("\nWindow size:")
-    print("  1. Maximized")
-    print("  2. Custom (e.g., 1280x720)")
-    size_choice = input("Choice (1 or 2, default=1): ").strip() or "1"
-    
-    if size_choice == "2":
-        window_size = input("Size (WIDTHxHEIGHT): ").strip() or "1280x720"
-    else:
+    if fast_path:
+        use_incognito = False
         window_size = "maximized"
+        use_screenshots = input("\nCapture screenshots? (y/n): ").lower() == 'y'
+        proxy = None
+    else:
+        use_incognito = input("\nRun in incognito mode? (y/n): ").lower() == 'y'
+
+        print("\nWindow size:")
+        print("  1. Maximized")
+        print("  2. Custom (e.g., 1280x720)")
+        size_choice = input("Choice (1 or 2, default=1): ").strip() or "1"
+
+        if size_choice == "2":
+            window_size = input("Size (WIDTHxHEIGHT): ").strip() or "1280x720"
+        else:
+            window_size = "maximized"
+
+        use_screenshots = input("Capture screenshots? (y/n): ").lower() == 'y'
+
+        # ___ proxy configuration:
+        use_proxy = input("Use proxy? (y/n): ").lower() == 'y'
+        proxy = None
+        if use_proxy:
+            proxy_server = input("Proxy server (e.g., http://proxy.com:8080): ").strip()
+            proxy_user = input("Username (or empty): ").strip()
+            proxy_pass = input("Password (or empty): ").strip()
+            proxy = {'server': proxy_server}
+            if proxy_user:
+                proxy['username'] = proxy_user
+                proxy['password'] = proxy_pass
     
-    use_screenshots = input("Capture screenshots? (y/n): ").lower() == 'y'
+    if job_board_selector == "indeed" and use_incognito:
+        print("\n" + "="*80)
+        print("NOTE: Incognito disables attach mode and the Indeed Chrome profile.")
+        print("Cloudflare may loop on Selenium. Prefer 'n' for incognito.")
+        print("For Cloudflare: python modules/warm_indeed_profile.py  (keep Chrome open)")
+        print("="*80)
     
-    # ___ proxy configuration:
-    use_proxy = input("Use proxy? (y/n): ").lower() == 'y'
-    proxy = None
-    if use_proxy:
-        proxy_server = input("Proxy server (e.g., http://proxy.com:8080): ").strip()
-        proxy_user = input("Username (or empty): ").strip()
-        proxy_pass = input("Password (or empty): ").strip()
-        proxy = {'server': proxy_server}
-        if proxy_user:
-            proxy['username'] = proxy_user
-            proxy['password'] = proxy_pass
-    
-    # ___  scraper init:
+    # ___ search configuration (before browser opens — avoids sitting on data:,):
+    config = ui.prompt_interactive_config(queries=search_queries)
+    print("\n" + "="*80)
+
+    # ___ scraper init (opens browser, then navigates immediately in search_jobs):
     scraper = get_scraper(
         board=job_board_selector,
         headless=False,
@@ -219,26 +331,49 @@ def run_interactive_mode():
         screenshots=use_screenshots,
         cookie_file=cookies.cookie_artifact if (job_board_selector == "indeed" and has_cookies) else None
     )
-    
+
     try:
-        # ___ get search configuration:
-        config = ui.prompt_interactive_config()
-        print("\n" + "="*80)
         start_time = datetime.now()
-        
-        jobs = scraper.search_jobs(
-            query=config['query'],
-            location=config['location'],
-            remote_only=config['remote_only'],
-            min_salary=config['min_salary'],
-            max_salary=config['max_salary'],
-            date_posted=config['date_posted'],
-            max_results=config['max_results']
-        )
+        all_jobs = []
+        queries = config.get('queries') or [config['query']]
+
+        for query in queries:
+            print(f"\n{'='*80}")
+            print(f"Searching: {query}")
+            print(f"{'='*80}")
+
+            jobs = scraper.search_jobs(
+                query=query,
+                location=config['location'],
+                remote_only=config['remote_only'],
+                min_salary=config['min_salary'],
+                max_salary=config['max_salary'],
+                date_posted=config['date_posted'],
+                max_results=config['max_results']
+            )
+
+            if jobs:
+                filename = query.replace(' ', '_').lower()
+                filepath = save_jobs_json(jobs, filename=filename, jb_board=job_board_selector)
+                _persist_jobs_to_db(
+                    jobs,
+                    board=job_board_selector,
+                    json_source=Path(filepath).name if filepath else None,
+                )
+                save_log(f"Interactive: {len(jobs)} jobs for '{query}'")
+                all_jobs.extend(jobs)
+            else:
+                print(f"\nNo jobs found for '{query}'")
+                save_log(f"Interactive: no jobs for '{query}'", log_type="error")
         
         end_time = datetime.now()
         
-        if jobs:
+        if all_jobs:
+            if len(queries) > 1:
+                combined = f"combined_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                save_jobs_json(all_jobs, filename=combined, jb_board=job_board_selector)
+                save_log(f"Interactive: combined {len(all_jobs)} jobs")
+
             # __ Dice-specific: ask if detailed scraping is needed:
             if job_board_selector == "dice":
                 scrape_details = input("\nScrape detailed job information? (y/n): ").lower() == 'y'
@@ -246,25 +381,21 @@ def run_interactive_mode():
                     print("\n" + "="*80)
                     print("Starting Phase 2: Detailed job scraping...")
                     print("="*80)
-                    jobs = scraper.scrape_job_details(jobs)
+                    all_jobs = scraper.scrape_job_details(all_jobs)
             
-            ui.print_summary(1, len(jobs), start_time, end_time)
-            filename = config['query'].replace(' ', '_').lower()
+            ui.print_summary(len(queries), len(all_jobs), start_time, end_time)
             
-            filepath = save_jobs_json(jobs, filename=filename, jb_board=job_board_selector)
-            
-            print(f"\n[+] Results saved to: {filepath}")
+            print(f"\n[+] Results saved under: artifacts/json/")
+            _generate_html_reports()
             
             if use_screenshots:
                 print("[+] Screenshots: artifacts/screenshots/")
-            save_log(f"Interactive: {len(jobs)} jobs for '{config['query']}'")
             
             browse = input("\nBrowse jobs interactively? (y/n): ").lower() == 'y'
             if browse:
-                ui.display_jobs_interactive(jobs)
+                ui.display_jobs_interactive(all_jobs)
         else:
             print("\nNo jobs found\n")
-            save_log(f"Interactive: no jobs for '{config['query']}'", log_type="error")
             
     except KeyboardInterrupt:
         print("\n\nInterrupted by user")
@@ -275,7 +406,23 @@ def run_interactive_mode():
         import traceback
         traceback.print_exc()
     finally:
-        input("\nPress Enter to close browser ...")
+        attach_mode = getattr(scraper, "use_attach", False)
+        quit_chrome = os.environ.get("INDEED_QUIT_CHROME", "").strip().lower() in ("1", "true", "yes")
+        orchestrator = _env_flag("INDEED_ORCHESTRATOR")
+
+        if attach_mode and not orchestrator:
+            if not quit_chrome:
+                keep_open = input("\nLeave Chrome open? (y/N): ").strip().lower()
+                if keep_open not in ("y", "yes"):
+                    os.environ["INDEED_QUIT_CHROME"] = "1"
+                    quit_chrome = True
+
+            if quit_chrome:
+                input("\nPress Enter to close Chrome and finish ... ")
+            else:
+                input("\nPress Enter to finish (Chrome stays open) ... ")
+        elif not attach_mode:
+            input("\nPress Enter to close browser ... ")
         scraper.close()
 
 
@@ -363,7 +510,12 @@ def run_auto_mode(args):
                 print(f"[+] Found {len(jobs)} jobs for '{query}'")
                 
                 filename = query.replace(' ', '_').lower()
-                save_jobs_json(jobs, filename=filename, output_dir=args.output_dir, jb_board=job_board_selector)
+                filepath = save_jobs_json(jobs, filename=filename, output_dir=args.output_dir, jb_board=job_board_selector)
+                _persist_jobs_to_db(
+                    jobs,
+                    board=job_board_selector,
+                    json_source=Path(filepath).name if filepath else None,
+                )
                 
                 save_log(f"Auto: {len(jobs)} jobs for '{query}'")
                 all_jobs.extend(jobs)
@@ -383,6 +535,9 @@ def run_auto_mode(args):
             combined = f"combined_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             save_jobs_json(all_jobs, filename=combined, output_dir=args.output_dir, jb_board=job_board_selector)
             save_log(f"Auto: combined {len(all_jobs)} jobs")
+
+        if all_jobs:
+            _generate_html_reports()
         
     except Exception as e:
         print(f"\n[X] Error: {e}")

@@ -42,6 +42,10 @@ requests>=2.31.0
 # ___ BeautifulSoup | <-- HTML parsing (scrape.do):
 beautifulsoup4>=4.12.0
 
+# ___ Local report server (Jobs/Search API + interactive UI):
+fastapi>=0.115.0
+uvicorn>=0.32.0
+
 # =============================================================================
 #                           *** POST-INSTALL ***
 # =============================================================================

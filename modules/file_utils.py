@@ -45,37 +45,60 @@ def save_jobs_json(jobs, filename, output_dir="artifacts/json", jb_board=None):
     
     timestamp = format_filename_timestamp()
     now = datetime.now()
+    search_query = (jobs[0].get("search_query") or jobs[0].get("query", "N/A")) if jobs else "N/A"
+    search_location = (
+        jobs[0].get("search_location") or jobs[0].get("location") or jobs[0].get("job_location", "N/A")
+    ) if jobs else "N/A"
 
     if jb_board == "dice":
         filepath = output_path / f"dice_data_{filename}_{timestamp}.json"
         output = {
-            'metadata': {
-                'source': 'Dice.com',
-                'total_jobs': len(jobs),
-                'scraped_at': now.isoformat(),
-                'scraped_at_readable': format_timestamp(now),
-                'search_params': {
-                    'query': jobs[0].get('query', 'N/A') if jobs else 'N/A',
-                    'location': jobs[0].get('location', 'N/A') if jobs else 'N/A',
+            "metadata": {
+                "board": "dice",
+                "source": "Dice.com",
+                "total_jobs": len(jobs),
+                "scraped_at": now.isoformat(),
+                "scraped_at_readable": format_timestamp(now),
+                "search_params": {
+                    "query": search_query,
+                    "location": search_location,
                 },
-                'pages_scraped': max([job.get('page', 1) for job in jobs]) if jobs else 1,
-                'detailed_scraping_enabled': any(job.get('detailed_scraped', False) for job in jobs)
+                "pages_scraped": max([job.get("page", 1) for job in jobs]) if jobs else 1,
+                "detailed_scraping_enabled": any(job.get("detailed_scraped", False) for job in jobs),
             },
-            'jobs': jobs
+            "jobs": jobs,
+        }
+    elif jb_board == "glassdoor":
+        filepath = output_path / f"glassdoor_data_{filename}_{timestamp}.json"
+        output = {
+            "metadata": {
+                "board": "glassdoor",
+                "source": "Glassdoor.com",
+                "total_jobs": len(jobs),
+                "scraped_at": now.isoformat(),
+                "scraped_at_readable": format_timestamp(now),
+                "search_params": {
+                    "query": search_query,
+                    "location": search_location,
+                },
+            },
+            "jobs": jobs,
         }
     else:
         filepath = output_path / f"{filename}_{timestamp}.json"
         output = {
-            'metadata': {
-                'total_jobs': len(jobs),
-                'scraped_at': now.isoformat(),
-                'scraped_at_readable': format_timestamp(now),
-                'search_params': {
-                    'query': (jobs[0].get('search_query') or jobs[0].get('query', 'N/A')) if jobs else 'N/A',
-                    'location': (jobs[0].get('search_location') or jobs[0].get('location', 'N/A')) if jobs else 'N/A',
-                }
+            "metadata": {
+                "board": jb_board or "indeed",
+                "source": "Indeed.com",
+                "total_jobs": len(jobs),
+                "scraped_at": now.isoformat(),
+                "scraped_at_readable": format_timestamp(now),
+                "search_params": {
+                    "query": search_query,
+                    "location": search_location,
+                },
             },
-            'jobs': jobs
+            "jobs": jobs,
         }
     
     # ___ write to file:

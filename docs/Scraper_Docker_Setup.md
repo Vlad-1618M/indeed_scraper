@@ -7,6 +7,7 @@ See [README.md](/README.md) for design notes and per-board details.
 
 1. [**Prerequisites**](#prerequisites)
 2. [**Environment Configuration**](#environment-configuration)
+3. [**Report Server (HTML + API)**](#report-server-html--api)
 4. [**Understanding Xvfb & Entrypoint**](#understanding-xvfb--entrypoint)
 5. [**Build the Image**](#build-the-image)
 6. [**Docker Compose Commands**](#docker-compose-commands)
@@ -71,6 +72,62 @@ Residential proxies help bypass Cloudflare's bot detection. Recommended provider
 - [IPRoyal](https://docs.iproyal.com/):
 - [Smartproxy](https://help.decodo.com/docs/introduction):
 - [Bright Data](https://docs.brightdata.com/introduction):
+
+---
+
+## Report Server (HTML + API)
+
+Scrapers write JSON to `artifacts/json/`. Reports use the same pipeline as on the host:
+
+1. **Import** JSON into SQLite and rebuild HTML shells
+2. **Serve** FastAPI on port **8765** (Jobs/Search API, lazy dashboard, Apply/Skip, screenshots)
+
+### Host equivalent
+
+```bash
+python3 modules/generate_job_reports.py --import-json
+python3 modules/generate_job_reports.py --serve
+# → http://127.0.0.1:8765/
+```
+
+### Docker equivalent
+
+```bash
+cd build
+./build.sh reports    # one-shot: import + rebuild in container
+./build.sh serve      # background service, port mapped to host
+```
+
+Or with compose:
+
+```bash
+docker-compose -f build/docker-compose.yml run --rm --no-deps report-server \
+  python3 modules/generate_job_reports.py --import-json
+
+docker-compose -f build/docker-compose.yml up -d report-server
+```
+
+Open **http://localhost:8765/** in your browser. The `report-server` service:
+
+- Binds **0.0.0.0:8765** inside the container (`REPORT_HOST=0.0.0.0`)
+- Publishes **`${REPORT_PORT:-8765}:8765`** to the host (set in `.env`)
+- Mounts **`../artifacts`** — same DB, HTML, JSON, and screenshots as host runs
+
+**Typical workflow after a scrape:**
+
+```bash
+./build.sh all                    # scheduled + reports + serve (one command)
+# or step by step:
+./build.sh dice && ./build.sh reports && ./build.sh serve
+```
+
+Stop the server:
+
+```bash
+docker-compose -f build/docker-compose.yml stop report-server
+```
+
+> Jobs and Search tabs require the server. Dashboard, Companies, Compare, and Screenshots are mostly static; dashboard scrape rows load JSON lazily via `/api/scrapes/{filename}/jobs`.
 
 ---
 
@@ -268,6 +325,20 @@ docker-compose -f build/docker-compose.yml run --rm scraper-dice
 docker-compose -f build/docker-compose.yml run --rm scraper-proxy
 ```
 
+### Report server (background):
+
+```bash
+docker-compose -f build/docker-compose.yml up -d report-server
+# Browser: http://localhost:8765/
+```
+
+### Import JSON + rebuild HTML (one-shot):
+
+```bash
+docker-compose -f build/docker-compose.yml run --rm --no-deps report-server \
+  python3 modules/generate_job_reports.py --import-json
+```
+
 ### Shell Access:
 >- Open bash shell for debugging:
 ```bash
@@ -304,6 +375,8 @@ build/build.sh
 | _glassdoor [query] [location] [max]_ | Glassdoor automated (no cookies) |
 | _interactive_ | Interactive mode (board selection) |
 | _scheduled_ | Multi-board scheduled scrape |
+| _reports_ | Import JSON + rebuild HTML in container |
+| _serve_ | Start report server on http://localhost:8765 |
 | _proxy_ | Indeed with proxy (needs .env) |
 | _shell_ | Open bash shell in container |
 | _logs_ | View container logs |
@@ -508,20 +581,30 @@ RUN playwright install chromium --with-deps
 All artifacts are saved to `artifacts/` (mounted as volume):
 ![Artifacts](/docs/png_repo_screenshots/Artifacts.png)
 
+| Path | Contents |
+|------|----------|
+| `artifacts/json/` | Per-query scrape JSON |
+| `artifacts/jobs.db` | SQLite aggregation |
+| `artifacts/html/` | Generated report pages |
+| `artifacts/screenshots/` | Page captures |
+| `artifacts/logs/` | Scraper logs |
+
 **Access from host:**
 
 ```bash
-# ___ View JSON output:
+# View JSON output:
 ls -la artifacts/json/
 cat artifacts/json/*.json | jq .
 
-# ___ View logs:
+# View logs:
 tail -f artifacts/logs/scraper_*.log
 
-# ___ View screenshots:
+# View screenshots:
 open artifacts/screenshots/pages/*.png
+
+# View reports in browser (after ./build.sh serve or host --serve):
+open http://localhost:8765/
 ```
-![view](/docs/png_repo_screenshots/View_Artifacts.png)
 ---
 
 ## Cron Job Examples
@@ -641,24 +724,17 @@ docker-compose -f build/docker-compose.yml down --rmi all --volumes
 
 **Key files:**
 - [build/Dockerfile](/build/Dockerfile) -> Container image definition
-- [build/docker-compose.yml](/build/docker-compose.yml) -> Service orchestration  
+- [build/docker-compose.yml](/build/docker-compose.yml) -> Scraper services + `report-server`
 - [build/entrypoint.sh](/build/entrypoint.sh) -> Xvfb startup + DISPLAY export
-- [build/build.sh](/build/build.sh) -> Helper commands
+- [build/build.sh](/build/build.sh) -> Helper commands (scrape, reports, serve)
 - __.env__ -> Environment variables created from [.env.example](/.env.example):
-
-**Xvfb flow:**
->1. Container starts -> entrypoint.sh runs
->2. Xvfb starts on display :99
->3. DISPLAY=:99 exported
->4. Verification with xdpyinfo
->5. Cleanup trap set
->6. Your scraper command runs
->7. On exit -> Xvfb killed
 
 **For quick start:**
 ```bash
 docker-compose -f build/docker-compose.yml build
-docker-compose -f build/docker-compose.yml run --rm scraper-auto
+docker-compose -f build/docker-compose.yml run --rm scraper-dice
+cd build && ./build.sh reports && ./build.sh serve
+# → http://localhost:8765/
 ```
 
 **For debugging:**

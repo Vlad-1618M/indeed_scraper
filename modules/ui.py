@@ -4,6 +4,7 @@
 """ UI Module: Handles interactive user interface and job browsing """
 
 import time
+from modules.job_titles_config import (job_titles_config_path, load_job_titles, parse_title_selection,)
 
 def job_board_portal():
     """ Prompt user for job board selection only:
@@ -25,6 +26,40 @@ def job_board_portal():
         print("[!] Invalid choice, defaulting to Indeed")
         return "indeed"
     
+
+def prompt_job_titles(board=None):
+    """Show preset job titles and let user pick by index or enter custom text.
+        Args: board (str): Optional job board name for display context.
+        Returns: list[str]: One or more job titles to search."""
+    
+    titles = load_job_titles()
+    board_label = (board or "job board").replace("_", " ").title()
+
+    print("\n" + "=" * 80)
+    print(f"Job Titles — {board_label}")
+    print("=" * 80)
+    print(f"Config: {job_titles_config_path()}")
+    print("\nPreset titles:")
+    for idx, title in enumerate(titles, 1):
+        print(f"  {idx:>2}. {title}")
+
+    print("\nSelect job title(s):")
+    print("  • Single index:     5")
+    print("  • Multiple indices: 1,5,8")
+    print("  • Range:            1-5   or   1,3-5,8")
+    print("  • All presets:      all")
+    print("  • Custom title:     type text (e.g. Staff SDET Engineer)")
+    print("  • Custom prompt:    c  or  custom")
+
+    choice = input("\nChoice (default 1): ").strip() or "1"
+    selected = parse_title_selection(choice, titles)
+
+    print(f"\nSelected ({len(selected)} title{'s' if len(selected) != 1 else ''}):")
+    for title in selected:
+        print(f"  → {title}")
+
+    return selected
+
 
 def display_jobs_interactive(jobs):
     """Interactive job browser with pagination:
@@ -104,8 +139,22 @@ def display_job_details(job):
     input("\nPress Enter to continue...")
 
 
-def prompt_interactive_config():
+def _prompt_optional_int(prompt, default=None):
+    """Read an optional integer; empty input returns default."""
+    raw = input(prompt).strip().replace(",", "").replace("$", "")
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        print(f"  [!] Invalid number {raw!r} — using default")
+        return default
+
+
+def prompt_interactive_config(queries=None):
     """ Prompt user for search configuration in interactive mode:
+        Args:
+            queries (list): Pre-selected job titles (optional).
         Returns: dict: <-- Configuration dictionary:"""
     
     print("\n" + "="*80)
@@ -114,21 +163,13 @@ def prompt_interactive_config():
     
     config = {}
     
-    # # __ select job board:
-    # print("\nSelect job board:")
-    # print("  1. Indeed")
-    # print("  2. Glassdoor")
-    # job_board = input("Enter choice (1-2, default 1): ").strip() or "1"
-    
-    # if job_board == "1":
-    #     config['board'] = "indeed"
-    # elif job_board == "2":
-    #     config['board'] = "glassdoor"
-    # else:
-    #     print("[!] Invalid choice, defaulting to Indeed")
-    #     config['board'] = "indeed"
-    
-    config['query'] = input("\nJob title (e.g., 'SDET'): ") or "Software Engineer"
+    if queries:
+        config['queries'] = list(queries)
+        config['query'] = queries[0]
+    else:
+        config['query'] = input("\nJob title (e.g., 'SDET'): ") or "Software Engineer"
+        config['queries'] = [config['query']]
+
     location_input = input("Location (empty for Remote): ")
     config['remote_only'] = input("Remote only? (y/n): ").lower() == 'y'
     
@@ -140,16 +181,22 @@ def prompt_interactive_config():
     
     use_salary = input("Salary filter? (y/n): ").lower() == 'y'
     if use_salary:
-        config['min_salary'] = int(input("Min salary: "))
-        config['max_salary'] = int(input("Max salary: "))
+        min_salary = _prompt_optional_int("Min salary (empty to skip): ")
+        max_salary = _prompt_optional_int("Max salary (empty to skip): ")
+        if min_salary is not None and max_salary is not None:
+            config['min_salary'] = min_salary
+            config['max_salary'] = max_salary
+        else:
+            print("  Salary filter skipped (need both min and max)")
+            config['min_salary'] = None
+            config['max_salary'] = None
     else:
         config['min_salary'] = None
         config['max_salary'] = None
     
     print("\nDate: 1=24h, 3=3days, 7=7days, 14=14days")
-    date_input = input("Days (empty for all): ")
-    config['date_posted'] = int(date_input) if date_input else None
-    config['max_results'] = int(input("Max results (default 25): ") or "25")
+    config['date_posted'] = _prompt_optional_int("Days (empty for all): ")
+    config['max_results'] = _prompt_optional_int("Max results (default 25): ", default=25)
     
     return config
 

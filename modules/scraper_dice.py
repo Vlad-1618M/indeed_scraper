@@ -8,9 +8,10 @@ import time
 import random
 import logging
 from pathlib import Path
-from seleniumbase import SB
 from datetime import datetime
 from modules.cfg import get_base_url
+from modules.cloudflare_helpers import ensure_page_ready, load_board_cookies
+from modules.sb_utils import (open_url, finalize_job_listing, job_listing_is_usable, is_duplicate_listing, start_board_browser,)
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
@@ -34,6 +35,8 @@ class DiceScraper:
         self.driver = None
         self.sb = None
         self._context_manager = None
+        self.use_attach = False
+        self.board = "dice"
 
         if artifacts_dir:
             self.artifacts_dir = Path(artifacts_dir)
@@ -62,31 +65,22 @@ class DiceScraper:
         self.close()
 
     def _start_browser(self):
-        logger.info("Starting browser in UC Mode...")
         try:
-            sb_options = dict(
-                uc=True,
-                headed=not self.headless,
+            session = start_board_browser(
+                self.board,
+                headless=self.headless,
                 incognito=self.incognito,
-                uc_cdp_events=True,
+                proxy=self.proxy,
+                window_size=self.window_size,
+                logger=logger,
+                landing_url=get_base_url("dice"),
             )
-            if self.proxy:
-                proxy_str = self.proxy.get('server', '')
-                if self.proxy.get('username'):
-                    auth = f"{self.proxy['username']}:{self.proxy.get('password', '')}"
-                    server = proxy_str.replace('http://', '').replace('https://', '')
-                    proxy_str = f"{auth}@{server}"
-                sb_options['proxy'] = proxy_str
-            self._context_manager = SB(**sb_options)
-            self.sb = self._context_manager.__enter__()
-            self.driver = self.sb.driver
-
-            if self.window_size == "maximized":
-                self.sb.maximize_window()
-            else:
-                width, height = map(int, self.window_size.split('x'))
-                self.sb.set_window_size(width, height)
-
+            self.sb = session["sb"]
+            self.driver = session["driver"]
+            self._context_manager = session["context"]
+            self.use_attach = session["use_attach"]
+            if not self.use_attach:
+                load_board_cookies(self.driver, self.board, get_base_url("dice"), logger)
             logger.info("Browser started successfully")
         except Exception as e:
             logger.error(f"Failed to start browser: {e}")
@@ -111,63 +105,68 @@ class DiceScraper:
         
         return f"{base_url}?{'&'.join(params)}" if params else base_url
 
-    def _dismiss_cookie_dialog(self):
-        """Dismiss cookie dialog"""
+    def _dismiss_overlays(self):
+        """Dismiss cookie banners, job-alert popups, etc."""
         try:
-            time.sleep(3)
+            time.sleep(2)
             script = """
             (function() {
-                const btns = Array.from(document.querySelectorAll('button'));
-                const reject = btns.find(b => b.textContent.toLowerCase().trim() === 'reject all');
-                if (reject) {
-                    reject.click();
-                    return 'clicked';
+                const labels = ['reject all', 'dismiss', 'close', 'not now'];
+                const buttons = Array.from(document.querySelectorAll('button, a[role="button"]'));
+                for (const label of labels) {
+                    const btn = buttons.find(b => (b.textContent || '').trim().toLowerCase() === label);
+                    if (btn) {
+                        btn.click();
+                        return label;
+                    }
                 }
-                return 'not_found';
+                return null;
             })();
             """
-            
             result = self.sb.execute_script(script)
-            if result == 'clicked':
-                logger.info("✓ Cookie dialog dismissed")
-                time.sleep(2)
+            if result:
+                logger.info(f"✓ Dismissed overlay: {result}")
+                time.sleep(1)
             return True
         except Exception:
             return True
+
+    def _count_job_cards_js(self):
+        """Count visible job cards using multiple DOM strategies."""
+        script = """
+        return (function() {
+            const detailLinks = document.querySelectorAll('a[href*="/job-detail/"]');
+            if (detailLinks.length) return detailLinks.length;
+            const articles = document.querySelectorAll('[role="article"]');
+            if (articles.length) return articles.length;
+            const cards = document.querySelectorAll('[data-testid="job-card"], [class*="JobCard"], li[class*="card"]');
+            return cards.length || 0;
+        })();
+        """
+        try:
+            count = self.sb.execute_script(script)
+            return int(count or 0)
+        except Exception:
+            return 0
 
     def _wait_for_content(self):
         """Wait for job listings to load"""
         try:
             logger.info("Waiting for job listings...")
-            self._dismiss_cookie_dialog()
-            time.sleep(5)
-            
-            for attempt in range(30):
-                script = """
-                (function() {
-                    const articles = document.querySelectorAll('[role="article"]');
-                    if (articles.length === 0) return {loaded: false};
-                    
-                    for (let article of articles) {
-                        const links = article.querySelectorAll('a');
-                        for (let link of links) {
-                            if (link.textContent.trim().length > 5) {
-                                return {loaded: true, count: articles.length};
-                            }
-                        }
-                    }
-                    return {loaded: false};
-                })();
-                """
-                
-                result = self.sb.execute_script(script)
-                if result.get('loaded'):
-                    logger.info(f"✓ Content loaded ({result.get('count')} jobs)")
+            self._dismiss_overlays()
+            time.sleep(3)
+
+            for attempt in range(40):
+                count = self._count_job_cards_js()
+                if count > 0:
+                    logger.info(f"✓ Content loaded ({count} job cards/links)")
                     time.sleep(2)
                     return True
+                if attempt and attempt % 10 == 0:
+                    self._dismiss_overlays()
                 time.sleep(0.5)
-            
-            logger.warning("Content didn't load")
+
+            logger.warning("Content didn't load — selectors may need updating")
             return False
         except Exception as e:
             logger.error(f"Error waiting: {e}")
@@ -179,10 +178,15 @@ class DiceScraper:
         """ Lazy load trigger with page scroll | helps to see all job cards """
         try:
             logger.info("Scrolling page ...")
-            
-            # Get initial count
-            init_count_js_script = "return document.querySelectorAll('[role=\"article\"]').length;"
-            initial_count = self.sb.execute_script(init_count_js_script)
+
+            init_count_js_script = """
+            return (function() {
+                const links = document.querySelectorAll('a[href*="/job-detail/"]');
+                if (links.length) return links.length;
+                return document.querySelectorAll('[role="article"]').length;
+            })();
+            """
+            initial_count = self.sb.execute_script(init_count_js_script) or 0
             
             # Scroll in steps
             for scroll_attempt in range(5):
@@ -191,7 +195,7 @@ class DiceScraper:
                 time.sleep(1.5)
                 
                 # Check if more jobs loaded
-                current_count = self.sb.execute_script(init_count_js_script)
+                current_count = self.sb.execute_script(init_count_js_script) or 0
                 
                 if current_count > initial_count:
                     logger.debug(f"  Jobs loaded: {initial_count} → {current_count}")
@@ -204,7 +208,7 @@ class DiceScraper:
             self.sb.execute_script("window.scrollTo(0, 0);")
             time.sleep(1)
             
-            final_count = self.sb.execute_script(init_count_js_script)
+            final_count = self.sb.execute_script(init_count_js_script) or 0
             logger.info(f"✓ Scroll complete: {final_count} jobs loaded")
             
             return True
@@ -219,109 +223,119 @@ class DiceScraper:
         """Extract jobs from current page"""
         try:
             script = """
-            (function() {
-                const articles = Array.from(document.querySelectorAll('[role="article"]'));
-                
+            return (function() {
                 function clean(text) {
                     if (!text) return '';
                     const txt = document.createElement('textarea');
                     txt.innerHTML = text;
                     return txt.value.replace(/\\s+/g, ' ').trim();
                 }
-                
-                return articles.map((article, idx) => {
+
+                function cardRoot(link) {
+                    return link.closest('[role="article"]')
+                        || link.closest('li')
+                        || link.closest('[class*="card"]')
+                        || link.closest('div[class*="Job"]')
+                        || link.parentElement?.parentElement?.parentElement;
+                }
+
+                const links = Array.from(document.querySelectorAll('a[href*="/job-detail/"]'));
+                const seen = new Set();
+                const results = [];
+
+                links.forEach((jobDetailLink, idx) => {
+                    const match = jobDetailLink.href.match(/job-detail\\/([a-f0-9-]+)/i);
+                    if (!match) return;
+                    const jobId = match[1];
+                    if (seen.has(jobId)) return;
+                    seen.add(jobId);
+
+                    const card = cardRoot(jobDetailLink);
+                    const cardLinks = card ? Array.from(card.querySelectorAll('a')) : [jobDetailLink];
+                    const text = card ? card.textContent : jobDetailLink.textContent;
+
                     const data = {
                         card_index: idx,
-                        title: 'Not Available',
+                        title: clean(jobDetailLink.textContent)
+                            || clean(jobDetailLink.getAttribute('aria-label'))
+                            || 'Not Available',
                         company: 'Not Available',
                         job_location: 'Not Available',
                         salary: 'Not Available',
                         job_type: 'Not Available',
                         posted_date: 'Not Available',
                         description: 'Not Available',
-                        url: 'Not Available',
-                        job_id: 'Not Available',
-                        easy_apply: false
+                        url: jobDetailLink.href.split('?')[0],
+                        job_id: jobId,
+                        easy_apply: /easy apply/i.test(text || '')
                     };
-                    
-                    // Get ALL links
-                    const allLinks = Array.from(article.querySelectorAll('a'));
-                    
-                    // Find job detail link (this is the real job URL)
-                    const jobDetailLink = allLinks.find(l => l.href && l.href.includes('job-detail'));
-                    if (jobDetailLink) {
-                        data.url = jobDetailLink.href;
-                        const match = jobDetailLink.href.match(/job-detail\\/([a-f0-9-]+)/);
-                        if (match) data.job_id = match[1];
-                        
-                        // Title might be in this link or nearby
-                        if (jobDetailLink.textContent.trim().length > 3) {
-                            data.title = clean(jobDetailLink.textContent);
-                        }
+
+                    if (data.title.length < 4) {
+                        const titleLink = cardLinks.find(l => l.href && l.href.includes('job-detail') && l.textContent.trim().length > 4);
+                        if (titleLink) data.title = clean(titleLink.textContent);
                     }
-                    
-                    // If no title yet, find first link with substantial text
-                    if (data.title === 'Not Available') {
-                        const linksWithText = allLinks.filter(l => l.textContent.trim().length > 10);
-                        if (linksWithText.length > 0) {
-                            data.title = clean(linksWithText[0].textContent);
-                        }
+
+                    const companyLink = cardLinks.find(l => l.href && (l.href.includes('company-profile') || l.href.includes('/company/')));
+                    if (companyLink) data.company = clean(companyLink.textContent);
+
+                    if (!data.company || data.company === 'Not Available') {
+                        const img = card ? card.querySelector('img[alt]') : null;
+                        if (img && img.alt && img.alt.length > 1) data.company = clean(img.alt);
                     }
-                    
-                    // Find company
-                    const companyLink = allLinks.find(l => l.href && l.href.includes('company-profile'));
-                    if (companyLink) {
-                        data.company = clean(companyLink.textContent);
-                    }
-                    
-                    // Extract from text
-                    const text = article.textContent;
-                    
-                    const locMatch = text.match(/Remote|([A-Z][a-z]+,\\s*[A-Z]{2})/);
+
+                    const locMatch = (text || '').match(/Remote|Hybrid|[A-Z][a-z]+,\\s*[A-Z]{2}/);
                     if (locMatch) data.job_location = clean(locMatch[0]);
-                    
-                    const dateMatch = text.match(/Today|Yesterday|\\d+d ago|\\d+ days? ago/i);
+
+                    const dateMatch = (text || '').match(/Today|Yesterday|\\d+\\s*d ago|\\d+\\s*days? ago/i);
                     if (dateMatch) data.posted_date = clean(dateMatch[0]);
-                    
-                    const salMatch = text.match(/\\$[\\d,]+(K)?\\s*-\\s*\\$[\\d,]+(K)?/);
+
+                    const salMatch = (text || '').match(/\\$[\\d,]+(?:K)?(?:\\.\\d{2})?(?:\\s*-\\s*\\$[\\d,]+(?:K)?(?:\\.\\d{2})?)?(?:\\s*per\\s*(?:year|annum|hour))?/i)
+                        || (text || '').match(/Depends on Experience/i);
                     if (salMatch) data.salary = clean(salMatch[0]);
-                    
-                    const typeMatch = text.match(/Contract|Full[- ]?time|Part[- ]?time/i);
+
+                    const typeMatch = (text || '').match(/Contract|Full[- ]?time|Part[- ]?time|Third Party/i);
                     if (typeMatch) data.job_type = clean(typeMatch[0]);
-                    
-                    // Description
-                    const paras = article.querySelectorAll('p, div');
-                    let longest = '';
-                    for (const p of paras) {
-                        const txt = clean(p.textContent);
-                        if (txt.length > longest.length && txt.length > 50) {
-                            longest = txt;
+
+                    if (card) {
+                        const paras = card.querySelectorAll('p, span, div');
+                        let longest = '';
+                        for (const p of paras) {
+                            const txt = clean(p.textContent);
+                            if (txt.length > longest.length && txt.length > 60 && txt !== data.title) {
+                                longest = txt;
+                            }
                         }
+                        if (longest) data.description = longest.substring(0, 500);
                     }
-                    if (longest) data.description = longest.substring(0, 500);
-                    
-                    // Easy Apply
-                    const btns = article.querySelectorAll('button, a');
-                    for (const btn of btns) {
-                        if (btn.textContent.toLowerCase().includes('easy apply')) {
-                            data.easy_apply = true;
-                            break;
-                        }
-                    }
-                    
-                    return data;
+
+                    results.push(data);
                 });
+
+                return results;
             })();
             """
-            
+
             jobs = self.sb.execute_script(script)
-            
-            if jobs:
-                valid = [j for j in jobs if j['title'] != 'Not Available' and j['url'] != 'Not Available']
-                logger.info(f"Extracted {len(valid)} valid jobs from page {page_num}")
-                return valid
-            
-            return []
+            if not isinstance(jobs, list):
+                logger.warning(f"Extraction returned unexpected type: {type(jobs).__name__}")
+                return []
+
+            usable = []
+            for raw in jobs:
+                job = finalize_job_listing(
+                    raw,
+                    board_label="Dice",
+                    id_field="job_id",
+                    build_url=lambda job_id: f"https://www.dice.com/job-detail/{job_id}",
+                )
+                if job_listing_is_usable(job, id_fields=("job_id",)):
+                    usable.append(job)
+
+            logger.info(
+                f"Extracted {len(usable)} listing(s) from page {page_num} "
+                f"(raw cards: {len(jobs)}; includes all visible results)"
+            )
+            return usable
         except Exception as e:
             logger.error(f"Extraction error: {e}")
             return []
@@ -336,16 +350,26 @@ class DiceScraper:
         all_jobs = []
         page_num = 1
         pages_used = 0
-        seen_ids = set()
-        
+
         while len(all_jobs) < max_results and page_num <= 10:
             pages_used = page_num
             url = self._build_search_url(query, location, remote_only, page_num)
             logger.info(f"\nPage {page_num}: {url}")
             
             try:
-                self.sb.open(url)
+                open_url(self.sb, url, logger)
                 time.sleep(random.uniform(PAGE_DELAY_MIN, PAGE_DELAY_MAX))
+                if not ensure_page_ready(
+                    self.sb,
+                    logger,
+                    board=self.board,
+                    site_name="Dice.com",
+                    jobs_hint="Dice job listings",
+                    use_attach=self.use_attach,
+                    landing_url=get_base_url("dice"),
+                ):
+                    logger.error("Cloudflare blocked Dice — try warm profile + attach mode")
+                    break
             except Exception as e:
                 logger.error(f"Failed to load page: {e}")
                 break
@@ -363,19 +387,31 @@ class DiceScraper:
                     pass
             
             jobs_data = self._extract_jobs(page_num)
-            
+
             if not jobs_data:
+                card_count = self._count_job_cards_js()
+                if card_count > 0:
+                    logger.warning(
+                        f"Found {card_count} card(s) on page but could not parse listings — "
+                        "selectors may need updating"
+                    )
                 break
-            
+
             jobs_added = 0
             for job in jobs_data:
                 if len(all_jobs) >= max_results:
                     break
-                
-                if job['job_id'] != 'Not Available' and job['job_id'] in seen_ids:
+
+                job = finalize_job_listing(
+                    job,
+                    board_label="Dice",
+                    id_field="job_id",
+                    build_url=lambda job_id: f"https://www.dice.com/job-detail/{job_id}",
+                )
+                if not job_listing_is_usable(job, id_fields=("job_id",)):
                     continue
-                if job['job_id'] != 'Not Available':
-                    seen_ids.add(job['job_id'])
+                if is_duplicate_listing(job, all_jobs, id_fields=("job_id",)):
+                    continue
                 
                 job_record = {
                     'query': query,
@@ -402,7 +438,10 @@ class DiceScraper:
                 all_jobs.append(job_record)
                 jobs_added += 1
             
-            logger.info(f"Added {jobs_added} jobs (total: {len(all_jobs)}/{max_results})")
+            logger.info(
+                f"Added {jobs_added} jobs (total: {len(all_jobs)}/{max_results}) "
+                f"for query '{query}'"
+            )
             
             if len(all_jobs) >= max_results:
                 break
@@ -442,7 +481,17 @@ class DiceScraper:
             
             try:
                 # Navigate to job detail page
-                self.sb.open(job['url'])
+                open_url(self.sb, job['url'], logger)
+                ensure_page_ready(
+                    self.sb,
+                    logger,
+                    board=self.board,
+                    site_name="Dice.com",
+                    jobs_hint="the job detail page",
+                    use_attach=self.use_attach,
+                    landing_url=get_base_url("dice"),
+                    max_rounds=2,
+                )
                 time.sleep(6)
                 
                 # Take screenshot
@@ -532,6 +581,11 @@ class DiceScraper:
         return jobs
 
     def close(self):
+        if getattr(self, "use_attach", False):
+            from modules.sb_utils import close_attach_session
+
+            close_attach_session(driver=self.driver, board=self.board, logger=logger)
+            return
         if self._context_manager:
             try:
                 self._context_manager.__exit__(None, None, None)

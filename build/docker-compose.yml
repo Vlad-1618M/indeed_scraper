@@ -9,6 +9,7 @@
 #   docker-compose -f build/docker-compose.yml run --rm scraper-interactive
 #   docker-compose -f build/docker-compose.yml run --rm scraper-dice
 #   docker-compose -f build/docker-compose.yml run --rm scraper-glassdoor
+#   docker-compose -f build/docker-compose.yml up -d report-server   # http://localhost:8765
 #
 # Indeed requires cookies: mount indeed_cookies.pkl (see scraper-indeed services)
 # Dice and Glassdoor run without cookies.
@@ -149,6 +150,27 @@ services:
       --proxy "${PROXY_SERVER:-}" --proxy-user "${PROXY_USER:-}" --proxy-pass "${PROXY_PASS:-}"
       --query "DevOps Engineer" --location "Remote" --remote --days 7 --max 25
     shm_size: '2gb'
+
+  # ==================================================================================================
+  # *** REPORT SERVER - FastAPI + static HTML (same as host --serve) ***
+  # ==================================================================================================
+  report-server:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    container_name: job-report-server
+    ports:
+      - "${REPORT_PORT:-8765}:8765"
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../.env:/app/.env:ro
+    environment:
+      - REPORT_HOST=0.0.0.0
+      - REPORT_PORT=8765
+      - TZ=${TZ:-America/New_York}
+    command: >
+      python3 modules/generate_job_reports.py --serve --host 0.0.0.0 --port 8765
+    restart: unless-stopped
 
 # =============================================================================
 #                             *** NETWORK ***
