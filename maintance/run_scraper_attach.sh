@@ -60,6 +60,33 @@ run_board_script() {
   return "$code"
 }
 
+# Safe under `set -u` when PASS_ARGS may be empty (macOS bash).
+run_board_with_pass_args() {
+  local script="$1"
+  if ((${#PASS_ARGS[@]})); then
+    run_board_script "$script" "${PASS_ARGS[@]}"
+  else
+    run_board_script "$script"
+  fi
+}
+
+run_all_boards_with_pass_args() {
+  if ((${#PASS_ARGS[@]})); then
+    run_all_boards "${PASS_ARGS[@]}"
+  else
+    run_all_boards
+  fi
+}
+
+exec_board_with_pass_args() {
+  local script="$1"
+  if ((${#PASS_ARGS[@]})); then
+    exec bash "$script" "${PASS_ARGS[@]}"
+  else
+    exec bash "$script"
+  fi
+}
+
 run_all_boards() {
   local script failed=0 name
   local scripts=("$INDEED_SH" "$GLASSDOOR_SH" "$DICE_SH")
@@ -99,21 +126,21 @@ show_menu() {
 }
 
 interactive_menu() {
-  local choice extra_args=()
+  local choice
   show_menu
   read -r -p "Choice [1-5]: " choice
   case "$choice" in
-    1) run_board_script "$INDEED_SH" "${extra_args[@]}" ;;
-    2) run_board_script "$GLASSDOOR_SH" "${extra_args[@]}" ;;
-    3) run_board_script "$DICE_SH" "${extra_args[@]}" ;;
-    4) run_all_boards "${extra_args[@]}" ;;
+    1) run_board_with_pass_args "$INDEED_SH" ;;
+    2) run_board_with_pass_args "$GLASSDOOR_SH" ;;
+    3) run_board_with_pass_args "$DICE_SH" ;;
+    4) run_all_boards_with_pass_args ;;
     5|q|Q) log "Bye"; exit 0 ;;
     *) die "Invalid choice: $choice" ;;
   esac
 }
 
 BOARD_CHOICE=""
-PASS_ARGS=()
+declare -a PASS_ARGS=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -145,11 +172,16 @@ chmod +x "$INDEED_SH" "$GLASSDOOR_SH" "$DICE_SH" 2>/dev/null || true
 
 if [[ -n "$BOARD_CHOICE" ]]; then
   case "$BOARD_CHOICE" in
-    indeed)   exec bash "$INDEED_SH" "${PASS_ARGS[@]}" ;;
-    glassdoor) exec bash "$GLASSDOOR_SH" "${PASS_ARGS[@]}" ;;
-    dice)     exec bash "$DICE_SH" "${PASS_ARGS[@]}" ;;
-    all)      run_all_boards "${PASS_ARGS[@]}" ;;
-    *)        die "Unknown board: $BOARD_CHOICE (indeed | glassdoor | dice | all)" ;;
+  # indeed)   exec bash "$INDEED_SH" "${PASS_ARGS[@]}" ;;
+  #   glassdoor) exec bash "$GLASSDOOR_SH" "${PASS_ARGS[@]}" ;;
+  #   dice)     exec bash "$DICE_SH" "${PASS_ARGS[@]}" ;;
+  #   all)      run_all_boards "${PASS_ARGS[@]}" ;;
+  #   *)        die "Unknown board: $BOARD_CHOICE (indeed | glassdoor | dice | all)" ;;
+    indeed)    exec_board_with_pass_args "$INDEED_SH" ;;
+    glassdoor) exec_board_with_pass_args "$GLASSDOOR_SH" ;;
+    dice)      exec_board_with_pass_args "$DICE_SH" ;;
+    all)       run_all_boards_with_pass_args ;;
+    *)         die "Unknown board: $BOARD_CHOICE (indeed | glassdoor | dice | all)" ;;
   esac
 fi
 
@@ -157,5 +189,6 @@ if [[ -t 0 ]]; then
   interactive_menu
 else
   log "Non-interactive: defaulting to Indeed (use --board glassdoor|dice|all)"
-  exec bash "$INDEED_SH" "${PASS_ARGS[@]}"
+  # exec bash "$INDEED_SH" "${PASS_ARGS[@]}"
+  exec_board_with_pass_args "$INDEED_SH"
 fi

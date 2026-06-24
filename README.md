@@ -32,29 +32,47 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-## 1 · Scrape
+## First run (recommended)
 
-**Attach mode** (recommended on macOS — reuses your logged-in Chrome):
+Use the **attach menu** — it opens real Chrome, handles Cloudflare / Glassdoor checks, and runs the scraper for you. Prefer this over `python3 src/main.py` when you are new to the repo or scraping Indeed/Glassdoor.
 
 ```bash
-bash maintance/run_scraper_attach.sh          # <-- menu: all boards / single board
-bash maintance/run_indeed_attach.sh           # <-- Indeed only:
-bash maintance/run_glassdoor_attach.sh        # <-- GlassDoor only:
-bash maintance/run_dice_attach.sh             # <-- Dice only:
+bash maintance/run_scraper_attach.sh
 ```
 
-**Direct CLI Examples:**
+| Menu | Board | Debug port |
+|------|-------|------------|
+| 1 | Indeed | 9222 |
+| 2 | Glassdoor | 9223 |
+| 3 | Dice | 9224 |
+| 4 | All three (sequential) | — |
+
+Single board (same flow, skip menu):
 
 ```bash
-python3 src/main.py --auto --board indeed --query "devops engineer" --location remote --max 50
+bash maintance/run_indeed_attach.sh
+bash maintance/run_glassdoor_attach.sh
+bash maintance/run_dice_attach.sh
+```
+
+**Indeed once (~30 days):** `python3 modules/get_cookies.py --auto` before first Indeed attach.
+
+**All job titles from** `config/job_titles.ini`: run attach, then at prompts choose indices or type `all`.
+
+**Reports after scrape:** attach scripts can refresh HTML; or manually:
+
+```bash
+python3 modules/generate_job_reports.py --import-json
+python3 modules/generate_job_reports.py --serve   # http://127.0.0.1:8765/
+```
+
+## 1 · Scrape (advanced — direct CLI)
+
+For automation/scripts. **Indeed and Glassdoor** usually need attach (above) — headless/auto CLI often hits Cloudflare or “Humans only”.
+
+```bash
 python3 src/main.py --auto --board dice --query "devops engineer" --location remote --max 50
-python3 src/main.py --auto --board glassdoor --query "software engineer" --location remote --max 50
-```
-
-Indeed cookies (once, ~30 days):
-
-```bash
-python3 modules/get_cookies.py --auto
+python3 src/main.py --auto --board indeed --queries "DevOps,SDET" --remote --max 25
 ```
 
 ## 2 · Import + build reports
@@ -131,7 +149,8 @@ modules/job_store.py             <-- SQLite import + search helpers
 modules/job_report_html.py       <-- HTML generators + embedded UI
 modules/job_report_api.py        <-- FastAPI routes
 modules/generate_job_reports.py  <-- Import / build / --serve CLI
-maintance/run_*_attach.sh        <-- Chrome attach orchestration
+maintance/run_*_attach.sh        <-- Chrome attach entry (start here)
+maintance/lib/attach_common.sh   <-- shared attach orchestration (required)
 artifacts/json/                  <-- Scrape output
 artifacts/jobs.db                <-- Aggregated database
 artifacts/html/                  <-- Generated reports
