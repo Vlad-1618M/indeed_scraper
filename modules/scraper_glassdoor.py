@@ -9,13 +9,16 @@ Based on actual DOM structure analysis:
 """
 
 import re
+import os
 import time
 import random
 import logging
 from pathlib import Path
-from seleniumbase import SB
 from datetime import datetime
+from urllib.parse import quote_plus
 from modules.cfg import get_base_url
+from modules.cloudflare_helpers import ensure_page_ready, ensure_warm_chrome_for_board, load_board_cookies
+from modules.sb_utils import (open_url, finalize_job_listing, job_listing_is_usable, is_duplicate_listing, start_board_browser, use_board_attach,)
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import TimeoutException
 
@@ -43,6 +46,8 @@ class GlassdoorScraper:
         self.driver = None
         self.sb = None
         self._context_manager = None
+        self.use_attach = False
+        self.board = "glassdoor"
 
         if artifacts_dir:
             self.artifacts_dir = Path(artifacts_dir)
@@ -59,6 +64,15 @@ class GlassdoorScraper:
             logger.info(f"Page screenshots: {self.pages_dir}")
             logger.info(f"Card screenshots: {self.cards_dir}")
 
+        if not use_board_attach(self.board):
+            allow_selenium = os.environ.get("GLASSDOOR_ALLOW_SELENIUM", "0").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+            if not allow_selenium:
+                ensure_warm_chrome_for_board(self.board, logger=logger)
+
         self._start_browser()
 
     def __enter__(self):
@@ -68,25 +82,31 @@ class GlassdoorScraper:
         self.close()
 
     def _start_browser(self):
-        logger.info("Starting browser in UC Mode ...")
         try:
-            self._context_manager = SB(uc=True, headed=not self.headless, incognito=self.incognito, uc_cdp_events=True)
-            self.sb = self._context_manager.__enter__()
-            self.driver = self.sb.driver
-
-            if self.window_size == "maximized":
-                self.sb.maximize_window()
-            else:
-                width, height = map(int, self.window_size.split('x'))
-                self.sb.set_window_size(width, height)
-
+            session = start_board_browser(
+                self.board,
+                headless=self.headless,
+                incognito=self.incognito,
+                proxy=self.proxy,
+                window_size=self.window_size,
+                logger=logger,
+                landing_url=get_base_url("glassdoor"),
+            )
+            self.sb = session["sb"]
+            self.driver = session["driver"]
+            self._context_manager = session["context"]
+            self.use_attach = session["use_attach"]
+            if self.use_attach:
+                logger.info("Glassdoor attach mode — use the warmed Chrome window on debug port 9223")
+            elif not self.use_attach:
+                load_board_cookies(self.driver, self.board, get_base_url("glassdoor"), logger)
             logger.info("Browser started successfully")
         except Exception as e:
             logger.error(f"Failed to start browser: {e}")
             raise
 
     def _build_search_url(self, query, location="", remote_only=False):
-        query_encoded = query.replace(' ', '-')
+        query_encoded = quote_plus(query.strip().replace(' ', '-'))
         query_len = len(query.strip())
         base_url = get_base_url(jb_board="glassdoor") + f"/Job/{query_encoded}-jobs-SRCH_KO0,{query_len}.htm"
         logger.info(f"[*]\tGlassdoor search URL: {base_url}")
@@ -98,54 +118,70 @@ class GlassdoorScraper:
     def _wait_for_job_listings(self):
         try:
             logger.info("Waiting for job listings ...")
-            self.sb.wait_for_element('li[data-test="jobListing"]', timeout=15)
+            selectors = [
+                'li[data-test="jobListing"]',
+                'a[data-test="job-title"]',
+                'ul[class*="JobsList"] li',
+            ]
+            for selector in selectors:
+                try:
+                    self.sb.wait_for_element(selector, timeout=10)
+                    logger.info(f"Job listings found via: {selector}")
+                    time.sleep(2)
+                    return True
+                except TimeoutException:
+                    continue
 
-            logger.info("Waiting for job content to render...")
-            self.sb.wait_for_element('a[data-test="job-title"]', timeout=15)
-
-            time.sleep(3)
-
-            logger.info("Job listings loaded successfully:")
-            return True
-        except TimeoutException:
             logger.warning("Could not find job listings ...")
             try:
                 self.sb.save_screenshot("debug_no_listings.png")
                 logger.info("Screenshot saved: debug_no_listings.png")
-            except:
+            except Exception:
                 pass
+            return False
+        except Exception as e:
+            logger.warning(f"Error waiting for listings: {e}")
             return False
 
     def _extract_jobs_via_javascript(self, max_results):
         """ Extract all job data using JavaScript """
         try:
             extract_script = """
-            (function() {
-                const ul = document.querySelector('ul.JobsList_jobsList__lqjTr');
-                if (!ul) return [];
+            return (function(maxResults) {
+                const cardSelectors = [
+                    'li[data-test="jobListing"]',
+                    'li[data-test="job-listing"]',
+                    'ul[class*="JobsList"] li',
+                    '[data-test="jobListing"]',
+                ];
+                let cards = [];
+                for (const sel of cardSelectors) {
+                    const found = Array.from(document.querySelectorAll(sel));
+                    if (found.length) {
+                        cards = found;
+                        break;
+                    }
+                }
+                if (!cards.length) return [];
 
-                const cards = Array.from(ul.querySelectorAll('li.JobsList_jobListItem__wjTHv'));
-
-                // Helper function to decode HTML entities
                 function decodeHtml(html) {
                     const txt = document.createElement('textarea');
                     txt.innerHTML = html;
                     return txt.value;
                 }
 
-                // Helper function to clean text
                 function cleanText(text) {
                     if (!text) return '';
-                    // Decode HTML entities
                     text = decodeHtml(text);
-                    // Remove excessive whitespace and newlines
-                    text = text.replace(/\\s+/g, ' ').trim();
-                    return text;
+                    return text.replace(/\\s+/g, ' ').trim();
                 }
 
-                return cards.slice(0, arguments[0]).map((card) => {
+                return cards.slice(0, maxResults).map((card) => {
                     const data = {
-                        job_id: card.getAttribute('data-jobid') || 'Not Available',
+                        job_id: card.getAttribute('data-jobid')
+                            || card.getAttribute('data-id')
+                            || card.getAttribute('id')
+                            || 'Not Available',
                         title: 'Not Available',
                         url: 'Not Available',
                         company: 'Not Available',
@@ -157,68 +193,83 @@ class GlassdoorScraper:
                         easy_apply: false
                     };
 
-                    // Extract title and URL
-                    const titleLink = card.querySelector('a[data-test="job-title"]');
+                    const titleLink = card.querySelector('a[data-test="job-title"]')
+                        || card.querySelector('a[href*="/job-listing/"]')
+                        || card.querySelector('a.jobTitle')
+                        || card.querySelector('a[href*="jobListingId"]');
                     if (titleLink) {
-                        data.title = cleanText(titleLink.textContent);
-                        data.url = titleLink.href;
+                        data.title = cleanText(titleLink.textContent)
+                            || cleanText(titleLink.getAttribute('aria-label'))
+                            || 'Not Available';
+                        data.url = titleLink.href || 'Not Available';
                     }
 
-                    // Extract company (without rating)
-                    const companyElem = card.querySelector('span[data-test="employer-name"]') ||
-                                       card.querySelector('[class*="employerName"]');
+                    if ((!data.url || data.url === 'Not Available')) {
+                        const anyLink = card.querySelector('a[href*="/job-listing/"], a[href*="jobListingId"]');
+                        if (anyLink) data.url = anyLink.href;
+                    }
+
+                    const companyElem = card.querySelector('span[data-test="employer-name"]')
+                        || card.querySelector('[data-test="emp-name"]')
+                        || card.querySelector('[class*="EmployerName"]');
                     if (companyElem) {
                         let companyText = cleanText(companyElem.textContent);
-                        // Remove rating pattern (e.g., "3.7★" or "4.2")
                         companyText = companyText.replace(/\\d+\\.\\d+★?\\s*$/, '').trim();
                         data.company = companyText;
                     }
 
-                    // Extract rating separately
-                    const ratingElem = card.querySelector('span[class*="RatingText"]');
+                    const ratingElem = card.querySelector('span[class*="RatingText"]')
+                        || card.querySelector('[data-test="rating"]');
                     if (ratingElem) {
                         data.company_rating = cleanText(ratingElem.textContent);
                     }
 
-                    // Extract location
-                    const locationElem = card.querySelector('div[data-test="emp-location"]');
+                    const locationElem = card.querySelector('div[data-test="emp-location"]')
+                        || card.querySelector('[data-test="location"]');
                     if (locationElem) {
                         data.job_location = cleanText(locationElem.textContent);
                     }
 
-                    // Extract salary
-                    const salaryElem = card.querySelector('div[data-test="detailSalary"]');
+                    const salaryElem = card.querySelector('div[data-test="detailSalary"]')
+                        || card.querySelector('[data-test="salary"]');
                     if (salaryElem) {
                         data.salary = cleanText(salaryElem.textContent);
                     }
 
-                    // Extract description
-                    const descElem = card.querySelector('div[data-test="descSnippet"]');
+                    const descElem = card.querySelector('div[data-test="descSnippet"]')
+                        || card.querySelector('[class*="JobDescription"]');
                     if (descElem) {
                         data.description = cleanText(descElem.textContent);
                     }
 
-                    // Extract posted date
-                    const ageElem = card.querySelector('div[data-test="job-age"]');
+                    const ageElem = card.querySelector('div[data-test="job-age"]')
+                        || card.querySelector('[data-test="job-age"]');
                     if (ageElem) {
                         data.posted_date = cleanText(ageElem.textContent);
                     }
 
-                    // Check for Easy Apply
-                    if (card.textContent.includes('Easy Apply')) {
+                    if (/easy apply/i.test(card.textContent || '')) {
                         data.easy_apply = true;
                     }
 
                     return data;
                 });
-            })();
+            })(arguments[0]);
             """
 
             jobs_data = self.sb.execute_script(extract_script, max_results)
 
             if jobs_data and isinstance(jobs_data, list):
-                logger.info(f"JavaScript extracted {len(jobs_data)} jobs:")
-                return jobs_data
+                usable = []
+                for raw in jobs_data:
+                    job = finalize_job_listing(raw, board_label="Glassdoor", id_field="job_id")
+                    if job_listing_is_usable(job, id_fields=("job_id",)):
+                        usable.append(job)
+                logger.info(
+                    f"JavaScript extracted {len(usable)} usable listing(s) "
+                    f"(raw cards: {len(jobs_data)})"
+                )
+                return usable
             else:
                 logger.warning("JavaScript extraction returned no data:")
                 return []
@@ -304,8 +355,19 @@ class GlassdoorScraper:
         logger.info(f"Search URL: {search_url}")
 
         try:
-            self.sb.open(search_url)
+            open_url(self.sb, search_url, logger)
             time.sleep(random.uniform(PAGE_DELAY_MIN, PAGE_DELAY_MAX))
+            if not ensure_page_ready(
+                self.sb,
+                logger,
+                board=self.board,
+                site_name="Glassdoor",
+                jobs_hint="Glassdoor job listings",
+                use_attach=self.use_attach,
+                landing_url=get_base_url("glassdoor"),
+            ):
+                logger.error("Cloudflare blocked Glassdoor — try warm profile + attach mode")
+                return []
         except Exception as e:
             logger.error(f"Failed to load search page: {e}")
             return []
@@ -329,16 +391,18 @@ class GlassdoorScraper:
             jobs_data = self._extract_jobs_via_javascript(max_results * 2)  # Get more than needed
 
             if not jobs_data:
-                logger.warning("No jobs extracted")
+                logger.warning("No jobs extracted from visible listings")
                 break
 
-            # __ convert to standard format and deduplicate:
+            jobs_added = 0
             for job in jobs_data:
-                if job['title'] == NOT_AVAILABLE:
-                    continue
+                if len(all_jobs) >= max_results:
+                    break
 
-                # __ check for duplicates:
-                if any(j['job_id'] == job['job_id'] for j in all_jobs if job['job_id'] != NOT_AVAILABLE):
+                job = finalize_job_listing(job, board_label="Glassdoor", id_field="job_id")
+                if not job_listing_is_usable(job, id_fields=("job_id",)):
+                    continue
+                if is_duplicate_listing(job, all_jobs, id_fields=("job_id",)):
                     continue
 
                 job_record = {
@@ -362,9 +426,16 @@ class GlassdoorScraper:
                 }
 
                 all_jobs.append(job_record)
-                
+                jobs_added += 1
+
                 if len(all_jobs) >= max_results:
                     break
+
+            if jobs_added:
+                logger.info(
+                    f"Collected {jobs_added} listing(s) for '{query}' "
+                    f"(total {len(all_jobs)}; board may include related jobs)"
+                )
 
             # __ if we have enough jobs, stop:
             if len(all_jobs) >= max_results:
@@ -393,6 +464,11 @@ class GlassdoorScraper:
         return all_jobs
 
     def close(self):
+        if getattr(self, "use_attach", False):
+            from modules.sb_utils import close_attach_session
+
+            close_attach_session(driver=self.driver, board=self.board, logger=logger)
+            return
         if self._context_manager:
             try:
                 self._context_manager.__exit__(None, None, None)

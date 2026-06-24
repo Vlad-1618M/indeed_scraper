@@ -3,19 +3,15 @@
 #       *** Job Scraper - Docker Build & Run Helper ***
 # =============================================================================
 #
-# Boards: Indeed (cookies required), Dice, Glassdoor (no cookies)
+# Boards: Dice + reports in Docker. Indeed → host only (Cloudflare).
 #
-# Usage:
-#   ./build.sh build                    # Build the Docker image
-#   ./build.sh auto                     # Indeed automated (needs indeed_cookies.pkl)
-#   ./build.sh auto "Python Developer" "New York" 50  # Custom Indeed search
-#   ./build.sh dice                     # Dice automated (no cookies)
-#   ./build.sh glassdoor                # Glassdoor automated (no cookies)
-#   ./build.sh interactive              # Interactive mode (board selection)
-#   ./build.sh scheduled                # Multi-board scheduled scrape
-#   ./build.sh shell                    # Open shell in container
-#   ./build.sh logs                     # View container logs
-#   ./build.sh clean                    # Remove containers and images
+# From repo root:
+#   ./build/build.sh build
+#   ./build/build.sh all dice              # dice scrape + reports + serve (default)
+#   ./build/build.sh dice [query] [loc] [max]
+#   ./build/build.sh reports && ./build/build.sh serve
+#   ./build/build.sh auto                  # shows Indeed host redirect
+#   ./build/build.sh help
 #
 # =============================================================================
 
@@ -33,7 +29,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR/.."
 COMPOSE_FILE="$PROJECT_ROOT/build/docker-compose.yml"
 
-# ___ Change to project root:
+# ___ Change to project root (works when invoked as ./build/build.sh from repo root):
 cd "$PROJECT_ROOT"
 
 # ___ Helper functions:
@@ -54,6 +50,126 @@ check_docker() {
     fi
 }
 
+# ___ Ensure .env is a file (Docker bake sometimes creates .env/ as a directory):
+ensure_env_file() {
+    local env_file="$PROJECT_ROOT/.env"
+    local example="$PROJECT_ROOT/.env.example"
+
+    if [ -d "$env_file" ]; then
+        if [ -z "$(ls -A "$env_file" 2>/dev/null)" ]; then
+            log_warn ".env is an empty directory — replacing with .env file (see docs/Scraper_Docker_Setup.md)"
+            rmdir "$env_file"
+        else
+            log_error ".env is a directory, not a file. Move its contents aside, remove it, then: cp .env.example .env"
+            exit 1
+        fi
+    fi
+
+    if [ ! -f "$env_file" ]; then
+        if [ -f "$example" ]; then
+            log_warn ".env missing — creating from .env.example"
+            cp "$example" "$env_file"
+        else
+            log_warn ".env missing — creating minimal .env"
+            printf 'TZ=America/New_York\nREPORT_HOST=127.0.0.1\nREPORT_PORT=8765\n' > "$env_file"
+        fi
+    fi
+}
+
+# ___ Indeed is host-only (Cloudflare / manual challenges):
+msg_indeed_use_host() {
+    cat <<'EOF'
+
+================================================================================
+INDEED IS NOT SUPPORTED IN DOCKER
+================================================================================
+
+Indeed uses Cloudflare and session checks that need a real browser and
+sometimes manual clicks. Container Chrome cannot reliably pass those
+challenges — saved cookies alone often fail after the first page.
+
+  Run Indeed on the HOST:
+
+    bash maintance/run_indeed_attach.sh
+    bash maintance/run_scraper_attach.sh          # menu: all boards
+
+  One-time cookies (~30 days):
+    python3 modules/get_cookies.py --auto
+
+  All titles from config/job_titles.ini (interactive — type "all" at prompt):
+    bash maintance/run_indeed_attach.sh
+
+  Direct CLI — single query:
+    python3 src/main.py --auto --board indeed \
+      --query "DevOps Engineer" --location Remote --remote --days 7 --max 50
+
+  Direct CLI — multiple queries:
+    python3 src/main.py --auto --board indeed \
+      --queries "DevOps Engineer,SDET,Site Reliability Engineer" \
+      --location Remote --remote --days 7 --max 25
+
+  Reports after host scrape (artifacts/ is shared with Docker):
+    python3 modules/generate_job_reports.py --import-json
+    python3 modules/generate_job_reports.py --serve
+    # or: ./build/build.sh reports && ./build/build.sh serve
+
+EOF
+    msg_docker_capabilities
+}
+
+msg_docker_capabilities() {
+    cat <<'EOF'
+--------------------------------------------------------------------------------
+WHAT DOCKER IS FOR
+--------------------------------------------------------------------------------
+
+  Board       Docker?   Notes
+  ---------   --------  -----
+  Dice        Yes       Best unattended board (default pipeline)
+  Reports     Yes       import JSON → SQLite + HTML
+  Serve       Yes       http://localhost:8765
+  Glassdoor   Maybe     Often hits "Humans only" — prefer host attach
+  Indeed      No        Use host commands above
+
+  Default pipeline (one Dice query + reports + serve):
+    ./build/build.sh all dice
+    # defaults: "DevOps Engineer" · Remote · max 25 · days 7
+
+  Custom Dice query:
+    ./build/build.sh dice "Python Developer" Remote 50
+    ./build/build.sh all dice "Site Reliability Engineer" Remote 30
+
+  Multiple queries in Docker (--queries, comma-separated):
+    docker-compose -f build/docker-compose.yml run --rm scraper-dice \
+      python src/main.py --auto --board dice \
+      --queries "DevOps Engineer,SDET,Platform Engineer" \
+      --location Remote --remote --days 7 --max 25
+
+  Glassdoor in Docker (best-effort — may fail):
+    ./build/build.sh glassdoor "Software Engineer" Remote 25
+    # prefer host: bash maintance/run_glassdoor_attach.sh
+
+  Reports only:
+    ./build/build.sh reports
+
+  Report server only:
+    ./build/build.sh serve
+
+  Docs: docs/Scraper_Docker_Setup.md
+================================================================================
+EOF
+}
+
+block_indeed_in_docker() {
+    msg_indeed_use_host
+    exit 1
+}
+
+msg_glassdoor_host_hint() {
+    log_warn "Glassdoor in Docker often fails on 'Humans only' pages."
+    log_info "Prefer host: bash maintance/run_glassdoor_attach.sh"
+}
+
 # ___ Build the Docker image:
 cmd_build() {
     log_info "Building Docker image..."
@@ -61,23 +177,9 @@ cmd_build() {
     log_success "Docker image built successfully"
 }
 
-# ___ Run automated scrape (Indeed - requires cookies):
+# ___ Run automated scrape (Indeed — blocked in Docker, use host):
 cmd_auto() {
-    local query="${1:-DevOps Engineer}"
-    local location="${2:-Remote}"
-    local max="${3:-25}"
-    
-    if [ ! -f "$PROJECT_ROOT/indeed_cookies.pkl" ]; then
-        log_warn "indeed_cookies.pkl not found. Indeed requires cookies."
-        log_info "Run locally: python modules/get_cookies.py --auto"
-        log_info "Or use: ./build.sh dice  (Dice, no cookies)"
-        exit 1
-    fi
-    log_info "Running Indeed automated scrape: '$query' in '$location' (max: $max)"
-    docker-compose -f "$COMPOSE_FILE" run --rm scraper-auto python src/main.py \
-        --auto --board indeed \
-        --query "$query" --location "$location" --remote --days 7 --max "$max"
-    log_success "Scrape completed. Check ./artifacts/json/ for results."
+    block_indeed_in_docker
 }
 
 # ___ Run Dice scrape (no cookies):
@@ -90,10 +192,12 @@ cmd_dice() {
         --auto --board dice \
         --query "$query" --location "$location" --remote --days 7 --max "$max"
     log_success "Scrape completed. Check ./artifacts/json/ for results."
+    log_info "View reports: ./build.sh serve  →  http://localhost:${REPORT_PORT:-8765}"
 }
 
-# ___ Run Glassdoor scrape (no cookies):
+# ___ Run Glassdoor scrape (best-effort in Docker):
 cmd_glassdoor() {
+    msg_glassdoor_host_hint
     local query="${1:-Software Engineer}"
     local location="${2:-Remote}"
     local max="${3:-25}"
@@ -102,31 +206,71 @@ cmd_glassdoor() {
         --auto --board glassdoor \
         --query "$query" --location "$location" --remote --days 7 --max "$max"
     log_success "Scrape completed. Check ./artifacts/json/ for results."
+    log_info "View reports: ./build.sh serve  →  http://localhost:${REPORT_PORT:-8765}"
 }
 
-# ___ Run interactive mode:
+# ___ Run interactive mode (Indeed/Glassdoor need host attach):
 cmd_interactive() {
-    log_info "Starting interactive mode..."
-    docker-compose -f "$COMPOSE_FILE" run --rm scraper-interactive
+    block_indeed_in_docker
 }
 
-# ___ Run scheduled scrapes:
+# ___ Run scheduled scrapes (Dice-only in Docker):
 cmd_scheduled() {
-    log_info "Running scheduled multi-search..."
+    log_info "Running scheduled Dice scrape (Indeed/Glassdoor → use host attach)..."
     docker-compose -f "$COMPOSE_FILE" run --rm scraper-scheduled
-    log_success "Scheduled scrapes completed."
+    log_success "Scheduled scrape completed."
+    log_info "Import + view: ./build/build.sh reports && ./build/build.sh serve"
 }
 
-# ___ Run with proxy:
+# ___ Import JSON and rebuild HTML reports (same as host generate_job_reports.py):
+cmd_reports() {
+    log_info "Importing JSON into SQLite and rebuilding HTML..."
+    docker-compose -f "$COMPOSE_FILE" run --rm --no-deps report-server \
+        python3 modules/generate_job_reports.py --import-json
+    log_success "Reports updated in ./artifacts/html/"
+    log_info "Start server: ./build.sh serve  →  http://localhost:${REPORT_PORT:-8765}"
+}
+
+# ___ Start FastAPI report server (background, port mapped to host):
+cmd_serve() {
+    log_info "Starting report server on http://localhost:${REPORT_PORT:-8765} ..."
+    docker-compose -f "$COMPOSE_FILE" up -d report-server
+    log_success "Report server running. Open http://localhost:${REPORT_PORT:-8765}/"
+    log_info "Stop with: docker-compose -f build/docker-compose.yml stop report-server"
+}
+
+# ___ Scrape + import/rebuild + serve (one command):
+cmd_all() {
+    local board="${1:-dice}"
+    shift || true
+
+    case "$board" in
+        scheduled)
+            cmd_scheduled
+            ;;
+        auto|indeed)
+            block_indeed_in_docker
+            ;;
+        dice)
+            cmd_dice "$@"
+            ;;
+        glassdoor)
+            cmd_glassdoor "$@"
+            ;;
+        *)
+            log_error "Unknown board '$board'. Use: dice, glassdoor, scheduled"
+            log_info "Indeed: run on host — ./build/build.sh auto  (shows redirect)"
+            exit 1
+            ;;
+    esac
+
+    cmd_reports
+    cmd_serve
+}
+
+# ___ Run with proxy (Indeed — blocked in Docker):
 cmd_proxy() {
-    if [ -z "$PROXY_SERVER" ]; then
-        log_warn "PROXY_SERVER not set. Create .env file or export variables."
-        log_info "Example: export PROXY_SERVER=http://proxy.example.com:8080"
-        exit 1
-    fi
-    
-    log_info "Running with proxy: $PROXY_SERVER"
-    docker-compose -f "$COMPOSE_FILE" run --rm scraper-proxy
+    block_indeed_in_docker
 }
 
 # ___ Open shell in container:
@@ -157,35 +301,41 @@ cmd_clean() {
 
 # ___ Show help:
 cmd_help() {
-    echo "Job Scraper - Docker Helper (Indeed, Dice, Glassdoor)"
+    echo "Job Scraper - Docker Helper"
     echo ""
-    echo "Usage: ./build.sh <command> [args]"
+    echo "Usage: ./build/build.sh <command> [args]   (from repo root)"
     echo ""
-    echo "Commands:"
+    echo "Indeed is HOST-ONLY (Cloudflare). Run: ./build/build.sh auto  for full redirect."
+    echo ""
+    echo "Docker commands:"
     echo "  build                          Build the Docker image"
-    echo "  auto [query] [location] [max]  Indeed automated (needs cookies)"
-    echo "  dice [query] [location] [max]  Dice automated (no cookies)"
-    echo "  glassdoor [query] [loc] [max]  Glassdoor automated (no cookies)"
-    echo "  interactive                    Interactive mode (board selection)"
-    echo "  scheduled                      Multi-board scheduled scrape"
-    echo "  proxy                          Indeed with proxy (requires .env)"
-    echo "  shell                          Open shell in container"
-    echo "  logs                           View container logs"
-    echo "  clean                          Remove containers and images"
-    echo "  help                           Show this help"
+    echo "  dice [query] [location] [max]  Dice scrape (default: DevOps Engineer, Remote, 25)"
+    echo "  glassdoor [query] [loc] [max]  Glassdoor scrape (best-effort; prefer host attach)"
+    echo "  scheduled                      Dice-only scheduled scrape"
+    echo "  reports                        Import JSON + rebuild HTML"
+    echo "  serve                          Report server on http://localhost:8765"
+    echo "  all [board] [query] [loc] [max]  Scrape + reports + serve (default board: dice)"
+    echo "  shell / logs / clean / help"
+    echo ""
+    echo "Blocked in Docker (shows host redirect): auto, proxy, interactive"
     echo ""
     echo "Examples:"
-    echo "  ./build.sh build"
-    echo "  ./build.sh auto                              # Indeed (needs indeed_cookies.pkl)"
-    echo "  ./build.sh dice 'Python Developer' Remote 50 # Dice, no cookies"
-    echo "  ./build.sh glassdoor 'DevOps' Remote 25      # Glassdoor"
-    echo "  ./build.sh interactive"
+    echo "  ./build/build.sh build"
+    echo "  ./build/build.sh all dice"
+    echo "  ./build/build.sh dice 'Python Developer' Remote 50"
+    echo "  ./build/build.sh reports && ./build/build.sh serve"
     echo ""
-    echo "Indeed cookies: Run 'python modules/get_cookies.py --auto' locally first."
-    echo "Proxy: Set PROXY_SERVER, PROXY_USER, PROXY_PASS in .env"
+    msg_docker_capabilities
 }
 
 # ___ Main:
+ensure_env_file
+
+_pre_cmd="${1:-help}"
+if [[ "$_pre_cmd" == "auto" || "$_pre_cmd" == "proxy" || "$_pre_cmd" == "interactive" ]]; then
+    block_indeed_in_docker
+fi
+
 check_docker
 
 case "${1:-help}" in
@@ -195,6 +345,9 @@ case "${1:-help}" in
     glassdoor)   shift; cmd_glassdoor "$@" ;;
     interactive) cmd_interactive ;;
     scheduled)   cmd_scheduled ;;
+    reports)     cmd_reports ;;
+    serve)       cmd_serve ;;
+    all)         shift; cmd_all "$@" ;;
     proxy)       cmd_proxy ;;
     shell)       cmd_shell ;;
     logs)        cmd_logs ;;

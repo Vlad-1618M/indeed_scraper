@@ -103,7 +103,7 @@ COPY src/ ./src/
 COPY doc[s]/ ./docs/
 
 # ___ Create artifacts directories (Dice uses details/ for Phase 2 screenshots):
-RUN mkdir -p artifacts/json artifacts/logs artifacts/screenshots/pages artifacts/screenshots/cards artifacts/screenshots/details
+RUN mkdir -p artifacts/json artifacts/logs artifacts/html artifacts/screenshots/pages artifacts/screenshots/cards artifacts/screenshots/details
 
 # =============================================================================
 #                   *** ENVIRONMENT CONFIGURATION ***
@@ -118,6 +118,11 @@ ENV DISPLAY=:99
 
 # ___ SeleniumBase settings:
 ENV SB_UC_MODE=true
+
+# ___ Container scraper defaults (headless Chromium via Xvfb — no host Chrome profile):
+ENV RUNNING_IN_DOCKER=1
+ENV SCRAPER_USE_UC=1
+ENV SCRAPER_NO_PROFILE=1
 
 # ___ Timezone | <-- override with -e TZ=your/timezone:
 ENV TZ=UTC

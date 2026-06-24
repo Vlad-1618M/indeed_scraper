@@ -8,8 +8,11 @@ import time
 import pickle
 import logging
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from seleniumbase import SB
 from selenium.common.exceptions import WebDriverException, TimeoutException
+from modules.sb_utils import build_sb_options, open_url
 
 # ___ configure logging:
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
@@ -170,9 +173,13 @@ def manual_login_and_save_cookies(cookie_file="indeed_cookies.pkl"):
     logger.info("Login manually, then press Enter when complete.")
     logger.info("=" * 70)
     
-    with SB(uc=True, uc_cdp_events=True, uc_subprocess=False) as sb:
+    cookie_path = Path(__file__).parent.parent / cookie_file
+    logger.info("Launching Chrome for login (standard mode)...")
+    logger.info("(First launch may take 30-60s while Chrome/driver initializes)")
+    sb_opts = build_sb_options(use_uc=False)
+    with SB(**sb_opts) as sb:
         logger.info("Opening Indeed login page...")
-        sb.uc_open_with_reconnect("https://secure.indeed.com/auth", reconnect_time=4)
+        open_url(sb, "https://secure.indeed.com/auth", logger)
         time.sleep(3)
         
         if not wait_for_manual_login(sb):
@@ -194,7 +201,7 @@ def manual_login_and_save_cookies(cookie_file="indeed_cookies.pkl"):
             logger.warning("No Indeed cookies found, saving all cookies")
             normalized_cookies = cookies
         
-        if not save_cookies_to_file(normalized_cookies, cookie_file):
+        if not save_cookies_to_file(normalized_cookies, str(cookie_path)):
             return False
         
         logger.info("Cookies will last 7-30 days")
@@ -217,9 +224,13 @@ def auto_detect_login_and_save_cookies(cookie_file="indeed_cookies.pkl"):
     logger.info("Script will automatically detect when you're logged in.")
     logger.info("=" * 70)
     
-    with SB(uc=True, uc_cdp_events=True, uc_subprocess=False) as sb:
+    cookie_path = Path(__file__).parent.parent / cookie_file
+    logger.info("Launching Chrome for login (standard mode)...")
+    logger.info("(First launch may take 30-60s while Chrome/driver initializes)")
+    sb_opts = build_sb_options(use_uc=False)
+    with SB(**sb_opts) as sb:
         logger.info("Opening Indeed login page...")
-        sb.uc_open_with_reconnect("https://secure.indeed.com/auth", reconnect_time=4)
+        open_url(sb, "https://secure.indeed.com/auth", logger)
         time.sleep(3)
         
         if not wait_for_auto_login(sb):
@@ -241,7 +252,7 @@ def auto_detect_login_and_save_cookies(cookie_file="indeed_cookies.pkl"):
             logger.warning("No Indeed cookies found, saving all cookies")
             normalized_cookies = cookies
         
-        if not save_cookies_to_file(normalized_cookies, cookie_file):
+        if not save_cookies_to_file(normalized_cookies, str(cookie_path)):
             return False
         
         logger.info("=" * 70)

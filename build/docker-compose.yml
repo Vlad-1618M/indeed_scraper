@@ -1,7 +1,7 @@
 # =============================================================================
 #       *** Job Scraper - Docker Compose Configuration ***
 # =============================================================================
-# Boards: Indeed (cookies required), Dice, Glassdoor (no cookies)
+# Boards: Dice + reports in Docker. Indeed/Glassdoor attach → host.
 #
 # From project root:
 #   docker-compose -f build/docker-compose.yml build
@@ -9,10 +9,20 @@
 #   docker-compose -f build/docker-compose.yml run --rm scraper-interactive
 #   docker-compose -f build/docker-compose.yml run --rm scraper-dice
 #   docker-compose -f build/docker-compose.yml run --rm scraper-glassdoor
+#   docker-compose -f build/docker-compose.yml up -d report-server   # http://localhost:8765
 #
 # Indeed requires cookies: mount indeed_cookies.pkl (see scraper-indeed services)
 # Dice and Glassdoor run without cookies.
 # =============================================================================
+
+x-scraper-environment: &scraper-environment
+  DISPLAY: :99
+  TZ: ${TZ:-America/New_York}
+  RUNNING_IN_DOCKER: "1"
+  SCRAPER_USE_UC: "1"
+  SCRAPER_NO_PROFILE: "1"
+  SCRAPER_ATTACH: "0"
+  GLASSDOOR_ALLOW_SELENIUM: "1"
 
 services:
   # ==================================================================================================
@@ -28,11 +38,10 @@ services:
       - ../.env:/app/.env:ro
       # ___ Mount cookies when using Indeed | copy docker-compose.override.example.yml → docker-compose.override.yml
     environment:
-      - DISPLAY=:99
-      - TZ=${TZ:-America/New_York}
-      - PROXY_SERVER=${PROXY_SERVER:-}
-      - PROXY_USER=${PROXY_USER:-}
-      - PROXY_PASS=${PROXY_PASS:-}
+      <<: *scraper-environment
+      PROXY_SERVER: ${PROXY_SERVER:-}
+      PROXY_USER: ${PROXY_USER:-}
+      PROXY_PASS: ${PROXY_PASS:-}
     command: >
       python src/main.py --auto --board indeed
       --query "DevOps Engineer" --location "Remote" --remote
@@ -57,8 +66,7 @@ services:
       - ../artifacts:/app/artifacts
       - ../.env:/app/.env:ro
     environment:
-      - DISPLAY=:99
-      - TZ=${TZ:-America/New_York}
+      <<: *scraper-environment
     stdin_open: true
     tty: true
     command: python src/main.py
@@ -76,8 +84,7 @@ services:
       - ../artifacts:/app/artifacts
       - ../.env:/app/.env:ro
     environment:
-      - DISPLAY=:99
-      - TZ=${TZ:-America/New_York}
+      <<: *scraper-environment
     command: >
       python src/main.py --auto --board dice
       --query "DevOps Engineer" --location "Remote" --remote
@@ -96,8 +103,7 @@ services:
       - ../artifacts:/app/artifacts
       - ../.env:/app/.env:ro
     environment:
-      - DISPLAY=:99
-      - TZ=${TZ:-America/New_York}
+      <<: *scraper-environment
     command: >
       python src/main.py --auto --board glassdoor
       --query "Software Engineer" --location "Remote" --remote
@@ -105,7 +111,7 @@ services:
     shm_size: '2gb'
 
   # ==================================================================================================
-  # *** SCHEDULED - Multi-board, multi-query (cron) ***
+  # *** SCHEDULED - Dice-only (Indeed/Glassdoor → host attach) ***
   # ==================================================================================================
   scraper-scheduled:
     build:
@@ -116,16 +122,13 @@ services:
       - ../artifacts:/app/artifacts
       - ../.env:/app/.env:ro
     environment:
-      - DISPLAY=:99
-      - TZ=${TZ:-America/New_York}
+      <<: *scraper-environment
     command: >
       /bin/bash -c "
-        echo '[*] Starting scheduled scrape at $(date)' &&
-        python src/main.py --auto --board indeed --query 'DevOps Engineer' --location 'Remote' --remote --days 1 --max 20 &&
+        echo '[*] Starting scheduled Dice scrape at $(date)' &&
+        python src/main.py --auto --board dice --query 'DevOps Engineer' --location 'Remote' --remote --days 1 --max 20 &&
         sleep 30 &&
         python src/main.py --auto --board dice --query 'Site Reliability Engineer' --location 'Remote' --remote --days 1 --max 20 &&
-        sleep 30 &&
-        python src/main.py --auto --board glassdoor --query 'Platform Engineer' --location 'Remote' --remote --days 1 --max 20 &&
         echo '[+] Scheduled scrape completed at $(date)'
       "
     shm_size: '2gb'
@@ -142,13 +145,33 @@ services:
       - ../artifacts:/app/artifacts
       - ../.env:/app/.env:ro
     environment:
-      - DISPLAY=:99
-      - TZ=${TZ:-America/New_York}
+      <<: *scraper-environment
     command: >
       python src/main.py --auto --board indeed
       --proxy "${PROXY_SERVER:-}" --proxy-user "${PROXY_USER:-}" --proxy-pass "${PROXY_PASS:-}"
       --query "DevOps Engineer" --location "Remote" --remote --days 7 --max 25
     shm_size: '2gb'
+
+  # ==================================================================================================
+  # *** REPORT SERVER - FastAPI + static HTML (same as host --serve) ***
+  # ==================================================================================================
+  report-server:
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
+    container_name: job-report-server
+    ports:
+      - "${REPORT_PORT:-8765}:8765"
+    volumes:
+      - ../artifacts:/app/artifacts
+      - ../.env:/app/.env:ro
+    environment:
+      - REPORT_HOST=0.0.0.0
+      - REPORT_PORT=8765
+      - TZ=${TZ:-America/New_York}
+    command: >
+      python3 modules/generate_job_reports.py --serve --host 0.0.0.0 --port 8765
+    restart: unless-stopped
 
 # =============================================================================
 #                             *** NETWORK ***

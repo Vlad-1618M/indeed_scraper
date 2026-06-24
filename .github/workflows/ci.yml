@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev, master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docker:
+              - 'build/**'
+              - 'modules/**'
+              - 'src/**'
+              - 'requirements.txt'
+              - 'requirements-dev.txt'
+              - 'pytest.ini'
+              - 'tests/**'
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Smoke imports
+        run: |
+          python -m compileall modules src
+          python src/main.py --help
+          python modules/generate_job_reports.py --help
+
+      - name: Pytest with coverage (job_store + job_report_api)
+        run: |
+          pytest tests/ -q \
+            --cov=modules.job_store \
+            --cov=modules.job_report_api \
+            --cov-report=term-missing \
+            --cov-fail-under=60
+
+  config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate build.sh and compose
+        run: |
+          bash -n build/build.sh
+          docker compose -f build/docker-compose.yml config --quiet
+
+  docker-build:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build report-server image
+        run: docker compose -f build/docker-compose.yml build report-server
+
+      - name: Import smoke inside container
+        run: |
+          docker compose -f build/docker-compose.yml run --rm --no-deps report-server \
+            python3 -c "from modules.job_report_api import app; from modules.job_store import init_db; print('ok')"

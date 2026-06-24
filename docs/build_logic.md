@@ -182,8 +182,23 @@ $ ./build.sh dice "Python Developer" Remote 25
 |------|------|
 | `build/Dockerfile` | Image definition, layer order, env vars |
 | `build/entrypoint.sh` | Xvfb setup, DISPLAY, cleanup |
-| `build/docker-compose.yml` | Services, volumes, default commands |
+| `build/docker-compose.yml` | Scraper services, `report-server`, volumes, ports |
 | `build/docker-compose.override.example.yml` | Cookie volume template |
-| `build/build.sh` | CLI wrapper for build/run commands |
+| `build/build.sh` | CLI wrapper: build, scrape, `reports`, `serve` |
+
+---
+
+## Report server in Docker
+
+The `report-server` compose service runs the same command as the host:
+
+```bash
+python3 modules/generate_job_reports.py --serve --host 0.0.0.0 --port 8765
+```
+
+- **No Xvfb** — uvicorn only; entrypoint still starts Xvfb but it is unused (harmless).
+- **Port mapping** — `REPORT_PORT:8765` exposes the API to the host browser.
+- **Shared artifacts** — `../artifacts:/app/artifacts` keeps DB/HTML/JSON in sync with host scrapes.
+- **One-shot rebuild** — `docker-compose run --rm --no-deps report-server python3 modules/generate_job_reports.py --import-json`
 
 ---
