@@ -20,16 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_indeed_cookies(raw_cookies):
-    """ Normalize Indeed cookies to use the correct domain:
-        Args: raw_cookies (list):   <-- List of cookie dictionaries from Selenium:
-        Returns: list:              <-- Filtered and normalized Indeed cookies: """
-    
+    """Normalize Indeed cookies to use the correct domain."""
     indeed_cookies = []
-
     for cookie in raw_cookies:
         if "indeed" in cookie.get("domain", ""):
             cookie["domain"] = ".indeed.com"
-            indeed_cookies.append(cookie)    
+            indeed_cookies.append(cookie)
     return indeed_cookies
 
 
@@ -261,10 +257,76 @@ def auto_detect_login_and_save_cookies(cookie_file="indeed_cookies.pkl"):
     return True
 
 
+def save_cookies_from_warm_chrome(port=None, cookie_file="indeed_cookies.pkl", jobs_url="https://www.indeed.com/jobs"):
+    """Export cookies from real warm Chrome (debug attach) to indeed_cookies.pkl.
+
+    Use this after logging in via maintance/run_*_attach.sh — avoids Selenium auth + Cloudflare loops.
+    """
+    from modules.sb_utils import attach_chrome_driver, indeed_debug_port, is_chrome_debug_port_open
+
+    port = port if port is not None else indeed_debug_port()
+    cookie_path = Path(__file__).parent.parent / cookie_file
+
+    if not is_chrome_debug_port_open(port):
+        logger.error(f"Chrome not open on debug port {port}")
+        logger.info("Run attach first and keep Chrome open, or use: maintance/run_indeed_attach.sh")
+        return False
+
+    logger.info(f"Reading Indeed cookies from warm Chrome on port {port}...")
+    driver = attach_chrome_driver(port, landing_url=jobs_url)
+    try:
+        try:
+            if "indeed.com" not in (driver.current_url or ""):
+                driver.get(jobs_url)
+                time.sleep(1)
+        except WebDriverException:
+            driver.get(jobs_url)
+            time.sleep(1)
+
+        cookies = driver.get_cookies()
+        if not cookies:
+            logger.error("No cookies found — log in to Indeed in the warm Chrome window first")
+            return False
+
+        normalized = normalize_indeed_cookies(cookies)
+        if not normalized:
+            logger.warning("No Indeed-domain cookies — saving all cookies from browser")
+            normalized = cookies
+
+        if not save_cookies_to_file(normalized, str(cookie_path)):
+            return False
+
+        logger.info("Cookies exported from warm Chrome (includes Cloudflare clearance when present)")
+        return True
+    finally:
+        try:
+            driver.quit()
+        except WebDriverException:
+            pass
+
+
 def main():
     """ Main entry point for the script: """
     try:
-        if len(sys.argv) > 1 and sys.argv[1] == "--auto":
+        if len(sys.argv) > 1 and sys.argv[1] == "--from-warm":
+            from modules.sb_utils import indeed_debug_port
+
+            port = indeed_debug_port()
+            if len(sys.argv) > 2:
+                try:
+                    port = int(sys.argv[2])
+                except ValueError:
+                    logger.error(f"Invalid port: {sys.argv[2]!r}")
+                    sys.exit(1)
+            success = save_cookies_from_warm_chrome(port=port)
+        elif len(sys.argv) > 1 and sys.argv[1] == "--auto":
+            logger.warning(
+                "Note: --auto uses Selenium on secure.indeed.com/auth and often hits Cloudflare."
+            )
+            logger.warning(
+                "Recommended: bash maintance/run_indeed_attach.sh — log in in real Chrome, "
+                "then save cookies at end of run (or: python3 modules/get_cookies.py --from-warm)"
+            )
             logger.info("Using AUTOMATIC detection method ...")
             logger.info("=" * 70)
             success = auto_detect_login_and_save_cookies()
@@ -284,10 +346,14 @@ def main():
         else:
             logger.error("\nSetup failed.")
             logger.info("\nTry alternative method:")
-            if "--auto" in sys.argv:
-                logger.info("  python3 get_cookies.py  # Manual method")
+            if "--from-warm" in sys.argv:
+                logger.info("  bash maintance/run_indeed_attach.sh  # log in in real Chrome first")
+                logger.info("  python3 modules/get_cookies.py --from-warm 9222  # while Chrome still open")
+            elif "--auto" in sys.argv:
+                logger.info("  bash maintance/run_indeed_attach.sh  # recommended")
+                logger.info("  python3 modules/get_cookies.py --from-warm 9222")
             else:
-                logger.info("  python3 get_cookies.py --auto  # Auto method")
+                logger.info("  python3 modules/get_cookies.py --from-warm 9222  # after attach login")
             sys.exit(1)
     
     except KeyboardInterrupt:
